@@ -1,0 +1,744 @@
+---
+title: \Large Excercise 1 - Multivariate Analysis
+author: "Marco Hernandez Velasco"
+date: "August 2018"
+output: 
+  pdf_document:
+    citation_package: natbib
+bibliography: [references.bib, packages.bib]
+---
+```{r setup_bibliography, include=FALSE}
+# automatically create a bib database for R packages
+rm(list=ls()) # remove all variables in memory
+
+knitr::write_bib(c(.packages(),  #make a bibliography for the packages
+              #packages used that will be cited
+                #basic packages used for Rmarkdown
+                'knitr', 'rmarkdown',  
+                #actual packages used  to solve
+                'tidyverse', 'splines'),   
+                'packages.bib') #file num to which the references will be saved to
+
+#define other general chunk settings
+knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
+                      fig.height = 4, #figures height for all chunks
+                      fig.align = "center") 
+```
+@* `r #includes all references in file, even those not mentioned in the text `
+
+```{r loading_packages, message = FALSE, echo = FALSE}
+library(readxl) # to import Excel files
+library(tidyverse) # to use tidy data
+library(splines)
+
+rm(list=ls()) # remove all variables in memory
+```
+
+# Q1 - Read data and lm in R
+
+Read the data into a dataframe. The data consists of hourly average values
+
+```{r q1_read_data, message = FALSE, results = 'hide', echo = FALSE}
+## Read the data into a data.frame. The data consists of hourly average values
+Xorig <- read.table("soenderborg_2day.csv", sep=",", header=TRUE, as.is=TRUE)
+## Convert the time from character to POSIXct, which is the class in R for representing time
+Xorig$t <- as.POSIXct(Xorig$t, tz="GMT")
+
+## Set which house to use (there are 3 in the data)
+ihouse <- 3
+Xorig$P <- Xorig[ ,paste0("P",ihouse)]
+
+## Check the content
+str(Xorig)
+summary(Xorig)
+
+## Save it in R data format for later easy use
+saveRDS(Xorig, "soenderborg_2day.RDS")
+
+## Keep it in X
+X <- Xorig
+```
+
+Only winter period
+
+```{r winter, message = FALSE, results = 'hide', echo = FALSE}
+## Set the summer period values to NA
+
+## Find the day of year for starting and ending summer
+as.POSIXlt("2011-06-01")$yday  #151
+as.POSIXlt("2011-10-01")$yday 
+
+## Find index of summer and set measurements to NA
+isummer <- 151 < as.POSIXlt(X$t)$yday & as.POSIXlt(X$t)$yday <= 273
+X[isummer, -1] <- NA
+
+## Plot the relation between external temperature and heat load
+
+plot(X$Te, X$P)
+
+## Simplest linear model
+fit_winter <- lm(P ~ Te, X)
+summary(fit_winter)
+abline(fit_winter)
+```
+
+```{r winter_plot, message= FALSE, results = 'hide', echo = FALSE}
+## Model validation (check i.i.d. and distribution of residuals)
+par(mfrow = c(2,2))
+## Plot residuals
+plot(fit_winter$residuals)
+
+## Residulas vs. input Te
+plot(X$Te[as.integer(names(fit_winter$residuals))], fit_winter$residuals)
+hist(fit_winter$residuals)
+qqnorm(fit_winter$residuals)
+qqline(fit_winter$residuals)
+
+## ACF
+par(mfrow = c(1,1))
+acf(fit_winter$residuals)
+
+```
+How does a linear regression model fit the data when using the winter period only?
+
+*The linear regression fits the data well enough. Looking from the residual plots, the residuals are independent and normally distributed. Also the ACF shows no auto significant correlation in the residuals so the linear regression is a good fit.*
+
+Both summer and winter
+
+```{r sum_win, results = 'hide', echo = FALSE}
+## But what if we don't remove the summer period?
+X <- Xorig
+plot(X$Te, X$P)
+
+## Simplest linear model
+fit <- lm(P ~ Te, X)
+summary(fit)
+abline(fit)
+
+## Model validation (check i.i.d. and distribution of residuals)
+par(mfrow = c(2,2))
+## Plot residuals
+plot(fit$residuals)
+## Residuals vs. input Te
+ival <- as.integer(names(fit$residuals))
+plot(X$Te[ival], fit$residuals)
+hist(fit$residuals)
+qqnorm(fit$residuals)
+qqline(fit$residuals)
+
+## And of course ACF
+par(mfrow = c(1,1))
+acf(fit_winter$residuals)
+
+## Another great plot to check residuals
+X$residuals <- NA
+X$residuals[ival] <- fit$residuals
+pairs(X[c("residuals","t","Te")], panel = panel.smooth, lower.panel = NULL)
+
+```
+How does a linear regression model fit the data when using all the data?
+*Including all the data reduces the fit of the model. The residuals are not anymore i.i.d. specially at higher temperatures.*
+
+\pagebreak
+
+# Q2 - Base splines intro
+
+The aim of this question is to give you an idea of how the base splines behave and how parameters can change them. Play around with the **bs** function.
+
+```{r q2_splines, results = 'hide', echo = FALSE}
+
+## See what it returns for a sequence from -1 to 1
+x = seq(-1,1,len=1000)
+x_bs <- bs(x, intercept = TRUE) #default degrees of freedom = 3 
+x_bs
+str(x_bs)
+## It is actually a matrix with attributes
+class(x_bs[ , ])
+## Use colnames() for matrix instead of names() for data.frame
+colnames(x_bs[ , ])
+
+## Make a function for plotting
+plot_bs <- function(x, x_bs){
+    ## Merge them with x
+    X <- data.frame(x, x_bs)
+    names(X) <- c("x",paste0("bs",1:(ncol(X)-1)))
+    ## Plot
+    icol <- grep("^bs", names(X))
+    plot(X$x, X$bs1, type="n", ylim=range(X[ ,icol]))
+    for(i in icol){
+        lines(X$x, X[ ,i], col=i)
+    }
+}
+plot_bs(x, x_bs)
+```
+Try to vary the degrees of freedom (df). What happens to the base splines generated?
+
+*A higher degree of freedom generates more base splines.*
+
+Try to vary the degree (degree). What happens to the base splines generated?
+
+*A higher degree changes the "shape" of the splines. Higher degree make polynomial or "curve" lines.*
+
+```{r q2_df, results = 'hide', echo = FALSE}
+## ----Degrees of freedom-----------------------------------------
+## Change degrees of freedom (of the spline function)
+df <- 7
+## Generate the base splines
+x_bs <- bs(x, df = df, intercept = TRUE)[ , ]
+## Plot and add the quantiles
+plot_bs(x, x_bs)
+
+## Change degree (of the piece-wise polynomials, i.e. polynomials between the knot points)
+df <- 7
+degree <- 1
+## Generate the base splines
+x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
+## Plot
+plot_bs(x, x_bs)
+
+```
+
+Give the knot points directly (using the knots argument). Give the knots as the quantiles of x, what happens when degree = 1 and what happens when degree = 3? 
+
+*Giving the knots directly we can change manually the breaking points. When defining the quantiles, we assign the knots depending on the amount of data. The degree changes the shape of the splines.*
+
+```{r q2_knot, results = 'hide', echo = FALSE}
+## Specify knot points
+## Or specify the knot points directly
+## As the quantiles
+df <- 7
+knots <- quantile(x, probs=seq(0, 1, by=1/(df-1)))
+knots
+
+## Generate the base splines of degree = 1 with the knots as the quantiles
+##
+## Note that the inner knots are given by the "knots" argument, the
+##   boundary knots are min(x) and max(x) (see ?bs "Boundary.knots")
+x_bs <- bs(x, knots = knots[2:(length(knots)-1)], degree = 1, intercept = TRUE)[ , ]
+## Plot
+plot_bs(x, x_bs)
+abline(v = knots)
+
+## Another degree
+degree <- 3
+
+## Generate the base splines of degree with the quantile knots
+x_bs <- bs(x, knots = knots[2:(length(knots)-1)], degree = degree, intercept = TRUE)[ , ]
+## Plot
+plot_bs(x, x_bs)
+abline(v = knots)
+```
+
+Try with some non-equidistant x sequence, such that the quantiles are not equidistant. What happens with the base splines? 
+
+*The base splines are then divided according to the definitions of the knots, with more splines where there is more data.*
+
+```{r non_equi_quant, results = 'hide', echo = FALSE}
+## ----Non-equidistant quantiles--------------------------------
+## Another sequence, where the quantiles are not equidistant
+x = c(seq(-1,0,len=200), seq(0,1,len=100), seq(1,2,len=500))
+
+## Set df and degree
+df <- 7
+degree <- 1
+
+## Generate the base splines of degree with the quantile knots
+x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
+## Plot
+plot_bs(x, x_bs)
+abline(v = knots)
+```
+\pagebreak
+
+# Q3 - Base splines model
+Now we want to calculate the base splines as a function of the external temperature. And then use them as input to a linear regression model. In this way, it becomes a non-linear model The characteristics of *f()* depend on how the base splines are generated, so it does not have any direct parameters, therefore such a model is called a non-parametric model.
+
+Try to fit a model, is it linear or how is it shaped?
+
+*The fitted model is not linear, but a polynomial fit. However there are some fit problems at the extremes.*
+
+```{r q3_read, results = 'hide', echo = FALSE}
+## Load the data
+X <- readRDS("soenderborg_2day.RDS")
+
+## Build a model using base splines
+## The bs() function can be directly used in the formula
+fit <- lm(P ~ bs(Te, df=3), X)
+
+## We get a coefficient for each base spline
+summary(fit)
+
+## Plot to see the estimated function between external temperature and heat load
+plot(X$Te, X$P)
+## We need to use predict to see the estimated function
+xseq <- seq(min(X$Te), max(X$Te), len = 100)
+lines(xseq, predict(fit, newdata = data.frame(Te = xseq)))
+```
+Try to change the degrees of freedom (df), what happens?
+
+*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a df=5 there is a good fit without overfitting.*
+
+```{r q3_df, results = 'hide', echo = FALSE}
+## ----Degrees of freedom (df)-----------------------------------
+## Build a model using base splines
+##
+## What should the df be?
+##
+fit <- lm(P ~ bs(Te, df=5), X)
+## We get a coefficient for each base spline
+summary(fit)
+## Plot the relation between external temperature and heat load
+plot(X$Te, X$P)
+## We need to use predict to see the estimated function
+lines(xseq, predict(fit, newdata=data.frame(Te=xseq)))
+```
+
+```{r q3_intercept, results = 'hide', echo = FALSE}
+
+## Use an intercept in lm() or in bs() gives nearly the same result
+##   using same number of parameters in the model
+fit <- lm(P ~ bs(Te, df=3), X)
+summary(fit)
+## Plot the relation between external temperature and heat load
+plot(X$Te, X$P)
+## We need to use predict to see the estimated function
+lines(xseq, predict(fit, newdata=data.frame(Te=xseq)))
+## 
+fit <- lm(P ~ 0 + bs(Te, df=4, intercept=TRUE), X)
+summary(fit)
+## We need to use predict to see the estimated function
+lines(xseq, predict(fit, newdata=data.frame(Te=xseq)), col=2)
+
+```
+
+\pagebreak
+
+# Q4 - Kernel functions
+Another way to make non-parametric models is to use locally weighted regression. To do this we need a kernel function. 
+
+Try to calculate and plot the triangular kernel and play around with the parameters.
+
+How do they affect the shape of the kernel?
+
+*Changing the x_i moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
+
+```{r q4_tri, results = 'hide', echo = FALSE}
+## Plot a kernel
+## Make a kernel function, plot it and play a little with it
+## 
+## Define the triangular kernel function
+##   x_i: the point for which to center
+##   x: the data points
+##   h: the bandwidth, +/- from x_i
+
+tri <- function(x_i, x, h){ 
+    val <- 1 - abs((x - x_i) / h)
+    val[val < 0] <- 0
+    return(val)
+}
+
+## Make a sequence
+x = seq(-1 , 1, len = 100)
+
+## See the shape
+plot(x, tri(x_i=0, x=x, h=0.4))
+## Try to change the parameters (x_i and h) and add it to the plot
+points(x, tri(x_i=0.3, x=x, h=0.1), col = 2)
+## Add some more
+```
+
+Try to calculate and plot the Epanechnikov kernel and play around with the parameters.
+How do they affect the shape of the kernel?
+
+*Similarly to the triangular kernel, changing the x_i in the Epanechnikov kernel function moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
+
+```{r q4_epanech, results = 'hide', echo = FALSE}
+
+## Define an Epanechnikov kernel function
+epanechnikov <- function(x_i, x, h)
+{
+  ## Epanechnikov kernel
+  u <- abs(x- x_i)
+  u <- u / h
+  val <- 3/4 * (1 - u^2)
+  ## Set values with |u|>1 to 0
+  val[abs(u)>1] <- 0
+  return(val)
+}
+
+## See the shape
+plot(x, epanechnikov(x_i=0, x=x, h=0.4))
+
+## Try to change the parameters (x_i and h) and add it to the plot
+points(x, epanechnikov(x_i=0.1, x=x, h=0.3), col = 2)
+## Add some more
+```
+
+\pagebreak
+
+# Q5 - Locally weighted model with a kernel function
+
+Fit a locally weighted model for a single
+point and predict the heat load.
+Fit for a sequence and make the plot of the function. Try to change the bandwidth h. 
+
+```{r q5_ini, results = 'hide', echo = FALSE}
+
+## Remove all in memory
+rm(list = ls())
+
+## Load the data
+X <- readRDS("soenderborg_2day.RDS")
+
+## Define the triangular kernel function
+tri <- function(x_i, x, h){ 
+    val <- 1 - abs((x - x_i) / h)
+    val[val < 0] <- 0
+    return(val)
+}
+
+```
+
+```{r q5_local_w, results = 'hide', echo = FALSE}
+## Fit a locally weighted model for some point 
+x_i <- 5
+
+## Fit the model using the kernel as weights (hence weighted linear regression model)
+fit <- lm(P ~ Te, data = X, weight = tri(x_i, X$Te, h=10))
+predict(fit, newdata = data.frame(Te=x_i))
+```
+```{r q5_bandwidth, echo= FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+## Fit a locally weighted model for a sequence
+x = seq(min(X$Te), max(X$Te), len=100)
+
+## The bandwidth
+h <- 7
+## A vector for the predictions
+P_hat <- rep(NA, length(x))
+## Fit and predict for each point
+for(i in 1:length(x)){
+    fit <- lm(P ~ Te, data = X, weight = tri(x[i], X$Te, h=h))
+    P_hat[i] <- predict(fit, newdata = data.frame(Te=x[i]))
+}
+## Plot it
+plot(X$Te, X$P)
+lines(x, P_hat)
+
+```
+How does changing the h change the estimated function between Te and P?  
+*A smaller h reduces the bandwith for the kernel function which takes less data points for the model fit. However, a very small h causes overfitting and if it comes to a part where the distance between points is larger than the h, then the line is fitted to 0. *
+
+What should the bandwidth h be?  
+*A bandwith between 6 and 7 gives a good fit. To find the best option a cross-validation has to be conducted to find the optimal.*
+\pagebreak
+
+# Q6 - Locally weighted model with a kernel function
+
+Now we have a challenge of finding the optimal values for the smoothing parameters, either the bandwidth **h** in the kernel or the degrees of freedom for the base splines. If the model is over-fitted it varies too much (the function is too flexible and bends around too much), and on the other hand if it is under-fitted, then it is not “bending” and adapting enough to
+the observations.
+
+One approach is to do a cross-validation optimization of a score function. In the case of estimating the (conditional) mean value, the score function should almost always be the **Root Mean Squared Error (RMSE).**  
+```{r q6_ini, results = 'hide', echo = FALSE}
+## Remove all in memory
+rm(list = ls())
+
+## Load the data
+X <- readRDS("soenderborg_2day.RDS")
+
+## Load the splines package
+library(splines)
+
+## Define the triangular kernel function
+tri <- function(x_i, x, h){ 
+    val <- 1 - abs((x - x_i) / h)
+    val[val < 0] <- 0
+    return(val)
+}
+```
+Do this for all the observations and then calculate the score function using the predictions. In this way we can find the right balance between under- and over-fitting. Carry out leave-one-out cross validation. Try to change the bandwidth. 
+
+```{r q6_cross-val, echo=FALSE, warning=FALSE, results='hide'}
+## Optimize using cross-validation (leave-one-out):
+##   Predict for each observation, WITHOUT using that observation when fitting
+
+## So for observation i, use "subset" argument in lm to include all other observations than i
+i <- 10
+i_subset <- (1:nrow(X))[-i]
+## So i is not in the sequence
+i_subset
+## The i'th observation will not be included in the fit
+fit <- lm(P ~ Te, data = X, subset = i_subset, weight = tri(X$Te[i], X$Te, h=10))
+## Now predict for the i'th observation
+predict(fit, newdata = data.frame(Te=X$Te[i]))
+
+## Put that in a loop and do it for all the points
+P_hat <- rep(NA, nrow(X))
+## Use bandwidth
+h <- 6
+##
+for(i in 1:nrow(X)){
+    i_subset <- (1:nrow(X))[-i]
+    ## The i'th observation will not be included in the fit
+    fit <- lm(P ~ Te, data = X, subset = i_subset, weight = tri(X$Te[i], X$Te, h=h))
+    ## Now predict for the i'th observation
+    P_hat[i] <- predict(fit, newdata = data.frame(Te=X$Te[i]))
+}
+##
+plot(X$Te, X$P)
+points(X$Te, P_hat, col = 2)
+
+## Calculate the RMSE score
+rmse <- function(x){
+    sqrt(mean(x^2,na.rm=TRUE))
+}
+rmse(X$P - P_hat)
+```
+What happens to the RMSE score?  
+*Depending on the bandwith h, the RMSE score of the model changes.*
+What should the bandwidth h be set to?  
+*A h = 6 gives the lowest RMSE.*
+
+Of course we cannot use our time doing manually optimization, so use an optimizer to optimize the bandwidth. 
+
+```{r q6_optim, echo = FALSE, warning=FALSE, results='hide'}
+## Use and optimizer to find the optimal value of the bandwidth h
+
+## Wrap the leave-one-out in a function which returns the score
+obj <- function(h, X){
+    P_hat <- rep(NA, nrow(X))
+    for(i in 1:nrow(X)){
+        i_subset <- (1:nrow(X))[-i]
+        ## The i'th observation will not be included in the fit
+        fit <- lm(P ~ Te, data = X, subset = i_subset, weight = tri(X$Te[i], X$Te, h=h))
+        ## Now predict for the i'th observation
+        P_hat[i] <- predict(fit, newdata = data.frame(Te=X$Te[i]))
+    }
+    ## The score value
+    val <- rmse(X$P - P_hat)
+    ##
+    print(paste("h =",h,", val =",val))
+    ##
+    return(val)
+}
+
+## Try it
+obj(h = 1, X)
+obj(h = 10, X)
+obj(h = 100, X)
+
+## The function can now be optimized automatically
+result <- optimize(obj, lower = 1, upper = 100, X = X)
+result
+```
+```{r q6_optim_plot, echo = FALSE, warning=FALSE, results='hide'}
+## Plot and see the function fitted with the optimal bandwidth
+h <- result$minimum
+
+## Fit a locally weighted model for a sequence
+x = seq(min(X$Te), max(X$Te), len=100)
+
+## A vector for the predictions
+P_hat <- rep(NA, length(x))
+## Fit and predict for each point
+for(i in 1:length(x)){
+    fit <- lm(P ~ Te, data = X, weight = tri(x[i], X$Te, h=h))
+    P_hat[i] <- predict(fit, newdata = data.frame(Te=x[i]))
+}
+## Plot it
+plot(X$Te, X$P)
+lines(x, P_hat)
+```
+Does the result look reasonable for the locally weighted model?
+*Using the optimized h = 5.51, the model fits the data properly.*
+
+Use leave-one-out cross validation for the base spline model. 
+```{r q6_bs_cv, echo = FALSE, warning=FALSE, results='hide'}
+## For the optimal df for the spline model using cross-validation
+##
+## Wrap it in a function for an optimizer
+obj <- function(df, X){
+    P_hat <- rep(NA, nrow(X))
+    for(i in 1:nrow(X)){
+        i_subset <- (1:nrow(X))[-i]
+        ## The i'th observation will not be included in the fit
+        fit <- lm(P ~ bs(Te, df=df), data = X, subset = i_subset)
+        ## Now predict for the i'th observation
+        P_hat[i] <- predict(fit, newdata = data.frame(Te=X$Te[i]))
+    }
+    ## The score value
+    val <- rmse(X$P - P_hat)
+    ##
+    print(paste("df =",df,", val =",val))
+    ##
+    return(val)
+}
+
+for(df in 3:10){
+    obj(df, X)
+}
+
+
+```
+Does the result look reasonable?
+*yes, the df = 6 gives a good fit to the data without overfitting and low boundary bias. The optimized RMSE is 325 which is also lower than the 329 that the Locally weighted model with h = 5.51 had*
+
+```{r q6_bs_aic_bic, echo = FALSE, warning=FALSE, results='hide'}
+
+## Or use AIC
+for(df in 3:10){
+    ## Just fit it
+    fit <- lm(P ~ bs(Te, df=df), data = X)
+    ## Calculate the AIC
+    print(paste("df =",df,", AIC =",AIC(fit)))
+}
+
+
+## Or use BIC (punish larger models more than AIC)
+for(df in 3:10){
+    ## Just fit it
+    fit <- lm(P ~ bs(Te, df=df), data = X)
+    ## Calculate the AIC
+    print(paste("df =",df,", BIC =",BIC(fit)))
+}
+```
+For the base spline models a model selection criteria, such as AIC or BIC can be used. Try that for the base spline model and compare. Do you get the same results?   
+*The results of the AIC and BIC don't come the same result. AIC find a df = 6, while BIC optimizes to df = 5.*
+
+\pagebreak
+
+# Q7 - Semi- and conditional parametric models
+
+Until now, we have calculated the weights and base splines using the input to the model. What if we used another variable, but still fitted the same model?  
+
+Lets try to calculate the weights using the time t. By doing that we actually allow the coefficients in the model to change as a function of time. We would usually in this case add a t to the parameters.  
+
+```{r q7_ini, results = 'hide', echo = FALSE}
+
+## Load the data
+X <- readRDS("soenderborg_2day.RDS")
+
+## Load the splines package
+library(splines)
+
+## Define the triangular kernel function
+tri <- function(x_i, x, h){ 
+    val <- 1 - abs((x - x_i) / h)
+    val[val < 0] <- 0
+    return(val)
+}
+
+## Define the RMSE score function
+rmse <- function(x){
+    sqrt(mean(x^2,na.rm=TRUE))
+}
+```
+
+
+```{r q7_cond_t, echo = FALSE, warning=FALSE, results='hide'}
+## Use t to calculate the weights used in the local fit
+
+## Wrap the leave-one-out cross-validation in a function for an optimizer
+obj <- function(h, X){
+    P_hat <- rep(NA, nrow(X))
+    for(i in 1:nrow(X)){
+        i_subset <- (1:nrow(X))[-i]
+        ## The i'th observation will not be included in the fit
+        fit <- lm(P ~ Te, data = X, subset = i_subset, weight = tri(X$t[i], X$t, h=h*24*3600))
+        ## Now predict for the i'th observation
+        P_hat[i] <- predict(fit, newdata = X[i, ])
+    }
+    ## The score value
+    val <- rmse(X$P - P_hat)
+    ## Print it
+    print(paste0("h = c(",paste(h,collapse=", "),"), val = ",val))
+    ## Return the score
+    return(val)
+}
+
+## Tune the bandwidth
+result <- optimize(obj, lower = 1, upper = 100, X = X)
+result
+
+## Use the bandwidth
+h <- result$minimum
+
+## Fit the model for each time point
+coef_intercept <- rep(NA, nrow(X))
+coef_Te <- rep(NA, nrow(X))
+##
+for(i in 1:nrow(X)){
+    fit <- lm(P ~ Te, data = X, weight = tri(X$t[i], X$t, h=h*24*3600))
+    coef_intercept[i] <- fit$coefficients[1]
+    coef_Te[i] <- fit$coefficients[2]
+}
+
+## Plot the coefficients as a function of time
+par(mfrow = c(2,1))
+plot(X$t, coef_intercept)
+plot(X$t, coef_Te)
+
+```
+
+```{r q7_bs_cond, echo = FALSE, warning=FALSE, results='hide'}
+## Do the same with base splines
+library(splines)
+
+## Wrap it in a function for an optimizer
+obj <- function(df, X){
+    P_hat <- rep(NA, nrow(X))
+    for(i in 1:nrow(X)){
+        i_subset <- (1:nrow(X))[-i]
+        ## The i'th observation will not be included in the fit
+        fit <- lm(P ~ 0 + bs(t, df=df, intercept=TRUE) + bs(t, df=df, intercept=TRUE):Te, data = X, subset = i_subset)
+        ## Now predict for the i'th observation
+        P_hat[i] <- predict(fit, newdata = X[i, ])
+    }
+    ## The score value
+    val <- rmse(X$P - P_hat)
+    ##
+    print(paste("df =",df,", val =",val))
+    ##
+    return(val)
+}
+
+for(df in 4:10){
+    obj(df, X)
+}
+
+## Or use AIC
+for(df in 4:10){
+    ## Just fit it
+    fit <- lm(P ~ 0 + bs(t, df=df, intercept=TRUE) + bs(t, df=df, intercept=TRUE):Te, data = X)
+    ## Calculate the AIC
+    print(paste("df =",df,", AIC =",AIC(fit)))
+}
+
+## See the estimated function of time
+fit <- lm(P ~ 0 + bs(t, df=7, intercept=TRUE) + bs(t, df=7, intercept=TRUE):Te, data = X)
+summary(fit)
+
+## Plot them
+par(mfrow = c(2,1))
+plot(bs(X$t, df=7, intercept=TRUE) %*% fit$coef[1:7], xlab = "Time", ylab = "Intercept")
+plot(bs(X$t, df=7, intercept=TRUE) %*% fit$coef[8:14], xlab = "Time", ylab = "Te coefficient")
+```
+
+What happens with the coefficients during the summer?
+*answer*
+
+Can you explain the result in relation to how the heating system of the building isoperating?
+*answer*
+
+\pagebreak
+
+# Q8 - Semi- and conditional parametric models
+
+...
+
+```{r q8_ini, results = 'hide', echo = FALSE}
+
+```
+
+
+\pagebreak

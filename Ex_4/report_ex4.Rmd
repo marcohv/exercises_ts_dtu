@@ -1,0 +1,903 @@
+---
+title: \Large Excercise 4 - Forecasting
+author: "Marco Hernandez Velasco"
+date: "August 2018"
+output: 
+  pdf_document:
+    citation_package: natbib
+header-includes:
+  - \usepackage{color}
+bibliography: [references.bib, packages.bib]
+---
+```{r setup_bibliography, include=FALSE}
+# automatically create a bib database for R packages
+rm(list=ls()) # remove all variables in memory
+
+knitr::write_bib(c(.packages(),  #make a bibliography for the packages
+              #packages used that will be cited
+                #basic packages used for Rmarkdown
+                'knitr', 'rmarkdown',  
+                #actual packages used  to solve
+                'tidyverse', 'ctsmr', 'splines'),   
+                'packages.bib') #file num to which the references will be saved to
+
+#define other general chunk settings
+knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
+                      fig.height = 4, #figures height for all chunks
+                      fig.align = "center") 
+```
+@* `r #includes all references in file, even those not mentioned in the text `
+
+```{r initialize, message = FALSE, echo = FALSE}
+library(readxl) # to import Excel files
+library(tidyverse) # to use tidy data
+library(ctsmr)
+library(splines)
+
+## Init by deleting all variables and functions
+rm(list=ls())
+## Set the working directory
+setwd(".")
+
+```
+
+
+# Q1 - Data setup and linear regression
+
+In the exercise numerical weather predictions (NWPs) are used as model input. The
+first step is to understand how they are set up. They are set up as matrices.
+
+```{r q1_ini, echo=FALSE, warning=FALSE, results='hide'}
+## Source scripts in the functions folder
+sapply(dir("functions",full.names=TRUE), source)
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+```
+Try to learn how the data is setup, divide into a training and a test set, fit a linear regression model for k = 1 step ahead. 
+
+```{r data_setup, echo=FALSE, warning=FALSE, results='hide'}
+## Learn how the data is setup
+
+## It is kept in a list
+class(Data)
+
+## Which variables
+names(Data)
+
+## NWPs are data.frames (i.e. matrices) and observations are vectors
+str(Data)
+
+## The observed ambient temperature
+Data$Ta
+## "t" is time
+plot(Data$t, Data$Ta, type = "l")
+
+## Its a vector
+class(Data$Ta)
+
+## We also have Numerical Weather Forecasts of ambient temperature
+
+## Arranged in a matrix
+class(Data$Tanwp)
+dim(Data$Tanwp)
+names(Data$Tanwp)
+
+## See the forecast available at i
+i <- 100
+## The time
+Data$t[i]
+## The forecast
+Data$Tanwp[100, ]
+
+## Plot the observations and the k = 1 step ahead forecast
+plot(Data$t, Data$Ta, type = "l")
+lines(Data$t, Data$Tanwp$k1, col = 2)
+
+## Make a scatter plot
+#plot(Data$Ta, Data$Tanwp$k1) #not plotted in the report
+
+## Also of the k = 24 hour forecast
+#plot(Data$Ta, Data$Tanwp$k24) #not plotted in the report
+
+## Wuups, we need to lag the NWPs to match in time
+## See how lag_vector() works
+x <- c(0,0,1,2,3,0,0)
+lag_vector(x, 1)
+lag_vector(x, 2)
+
+## Lag the NWPs to match in time
+plot(Data$Ta, lag_vector(Data$Tanwp$k1, 1))
+plot(Data$Ta, lag_vector(Data$Tanwp$k24, 24))
+```
+Does the forecast look reasonable? Which seems to be most accurate k = 1 or 24 steps ahead?  
+
+*yes, the weather forecast seems reasonable even with a k = 24, it doesn't change too much and fits relatively good a line, altough the best is with k=1*
+
+Try the laod forecast for a different house. Give an example and a summary of what you find.  
+
+*For House 4, with k = 1 steps ahead, the load forescast is not so good and there is still alot of variation not being considered. Nevertheless the model is able to account for 49% of the variance (R^2) and has a low RMSE compared to the other houses.*
+```{r q1_new_house, echo=FALSE, warning=FALSE, results='hide'}
+## Now lets make a model and calculate load forecasts
+
+## Make a data.frame with synced observations and NWPs
+## Take Ph4, which is the load from House 5
+
+## Make the k = 1 steps ahead "design matrix"
+X <- data.frame(t = Data$t, Ph = Data$Ph4, 
+                Ta = lag_vector(Data$Tanwp$k1,1), 
+                G = lag_vector(Data$Gnwp$k1,1))
+
+## Make a training set, first 3 month, and a test set
+## Just keep the indexes
+itrain <- which(per("2010-09-01",X$t,"2010-12-01"))
+itest <- which(per("2010-12-01",X$t,"2011-01-01"))
+
+## Fit a linear model on the training set
+fit <- lm(Ph ~ Ta + G, X[itrain, ])
+
+## Are the coefficients significant?
+summary(fit)
+
+## Predict 
+X$Ph_hat_lm <- predict(fit, X)
+
+## Plot the test set
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_lm[itest], col = 2)
+
+
+## The score
+rmse1 <- rmse(X$Ph[itest] - X$Ph_hat_lm[itest])
+rmse1
+```
+\pagebreak
+
+# Q2 - Low-pass filter
+
+We know, that the response of a building can be modelled as an R-C network, which lead to a low-pass filtering effect. Hence, we can apply a low-pass filter to the input, and the use that in the linear regression.
+
+In order to take dynamics into account we can filter the inupts. One can say it is a transformations of the inputs (like with base splines).
+
+First in order to model a linear dynamical 1st order system (i.e. single RC) make a sequence like an on/off signal.
+
+```{r q2_lowpass_filter, echo=FALSE, warning=FALSE, results='hide'}
+
+
+## Apply a low-pass filter
+x <- rep(c(rep(0,100),rep(1,100)), 4)
+plot(x, type="l")
+
+## Do a first order low-pass filter with coefficient a1
+a1 <- 0.99
+## Init
+y <- x
+y[1] <- x[1]
+for (i in 2:length(x)) {
+    y[i] <- a1 * y[i - 1] + (1 - a1) * x[i]
+}
+
+## Plot them
+lines(y, col = 2)
+```
+
+What happens with the relation between the input and the low-pass filtered signal e.g. what is the relation between the time constant and a1?  
+
+*The low-pass filter smoothness the signal and makes the sudden on/off changes slower. When a1 takes a value of 1 then the filtered signal is always 0. When a1 = 1, then the filtered signal follows the input exactly. The time constant is how long it takes to reach the 96% of the input signal.*
+
+What about the stationary gain? (i.e. the limit y approaches)  
+
+*Depending on the value of a1, the filtered signal doesn't reach 0 after the cycle and there is a gain which reaches a limit. *
+\pagebreak
+
+# Q3 - Load forecast
+
+```{r q3_ini, echo=FALSE, warning=FALSE, results='hide'}
+## Source scripts in the functions folder
+sapply(dir("functions",full.names=TRUE), source)
+
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+
+## Make the k = 1 "design matrix"
+X <- data.frame(t = Data$t, Ph = Data$Ph4, Ta = lag_vector(Data$Tanwp$k1,1), G = lag_vector(Data$Gnwp$k1,1), tday = Data$tday)
+
+## The index of training and test set
+itrain <- which(per("2010-09-01",X$t,"2010-12-01"))
+itest <- which(per("2010-12-01",X$t,"2011-01-01"))
+```
+
+```{r q3_lowpass, echo=FALSE, warning=FALSE, results='hide'}
+##----------------------------------------------------------------
+## We know that there are dynamics from Ta to Ph
+
+## The low-pass filter function is defined in "functions/lp_vector.R"
+
+## Apply a low-pass filter on the input
+X$Ta_lp <- lp_vector(X$Ta, a1 = 0.99)
+## and plot the test set
+plot(X$t[itest], X$Ta[itest], type = "l")
+lines(X$t[itest], X$Ta_lp[itest], col = 2)
+```
+Is the model tuned for the particular building heat dynamics?  
+
+*It is tuned for the thermal mass of the buidling compared to the outdoor temperature but doesn't follow properly the fluctuations.*
+
+```{r q3_lowpass_fit, echo=FALSE, warning=FALSE, results='hide'}
+## Use it to make a model
+## Fit a linear model on the training set
+fit <- lm(Ph ~ Ta_lp + G, X[itrain, ])
+
+## Are the coefficients significant?
+summary(fit)
+
+## Predict and plot
+X$Ph_hat_lp1 <- predict(fit, X)
+##
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_lp1[itest], col = 2)
+
+## The score
+rmse2 <- rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
+
+```
+Are the forecasts improved in terms of RMSE?  
+
+*Yes, the RMSE improved from `r rmse1` without low-pass filter to `r rmse2`.*  
+
+
+**Tunning the low-pass coefficient:**
+```{r q3_lowpass_tune, echo=FALSE, warning=FALSE, results='hide'}
+## We have to tune the low-pass coefficient, do it 
+obj <- function(prm, frml, data) {
+    ## Find the inputs to lowpass filter
+    ## Just overwrite the column in data
+    for(nm in names(prm)){
+        data[ ,nm] <- lp_vector(data[ ,nm], a1 = prm[nm])
+    }
+    ## Fit the model
+    fit <- lm(frml, data)
+    ## Calculate the objective function
+    print(val <- rmse(fit$residuals))
+    return(val)
+}
+
+frml <- as.formula(Ph ~ Ta + G)
+
+obj(c(Ta=0.98, G=0.98), frml, X[itrain, ])
+
+result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml=frml, data=X[itrain, ], method="L-BFGS-B")
+
+result
+
+## Now lets analyse the predictions
+
+## Hmm, lets extend our objective function, such that it also can return the predictions
+obj <- function(prm, frml, data, itrain, return_fit = FALSE) {
+    ## Find the inputs to lowpass filter
+    ## Just overwrite the column in data
+    for(nm in names(prm)){
+        data[ ,nm] <- lp_vector(data[ ,nm], a1 = prm[nm])
+    }
+    ## Fit the model, ONLY on the training set
+    fit <- lm(frml, data[itrain, ])
+    ## Calculate the objective function
+    print(val <- rmse(fit$residuals))
+    ## Either return the fit and more
+    if(return_fit){
+        return(list(val = val,
+                    fit = fit,
+                    yhat = predict(fit, data)))
+    }else{
+        ## Or just return the score
+        return(val)
+    }
+}
+
+## It can be used in optim
+result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml = frml, data = X[itrain, ], method = "L-BFGS-B", itrain = itrain)
+
+## But now we can also get the fit and the predictions
+L <- obj(result$par, frml, X, itrain, return_fit = TRUE)
+
+summary(L$fit)
+
+X$Ph_hat_lpopt <- L$yhat
+
+## Plot the predictions
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_lpopt[itest], col = 2)
+
+## The score
+rmse3 <- rmse(X$Ph[itest] - X$Ph_hat_lpopt[itest])
+```
+Did we improve?
+*There is a minor improve in the RMSE from `r round(rmse2, 3)` to `r round(rmse3, 3)` with the tuned low-pass filter.*
+
+Finally, include a diurnal curve using base splines. Make the base splines using bs(). Do we get better forecasts?
+
+```{r q3_splines, echo=FALSE, warning=FALSE, results='hide'}
+## We miss something: a diurnal curve
+
+## We have the hour of the day
+X$tday
+
+## Hey thats simple now! Add base splines to the formula
+frml <- as.formula(Ph ~ bs(tday,df=4) + Ta + G)
+
+## Tune the low-pass coefficients
+result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml=frml, data=X[itrain, ], method="L-BFGS-B")
+
+result
+
+## Get the fit and the predictions
+L <- obj(result$par, frml, X, itrain, return_fit = TRUE)
+
+summary(L$fit)
+
+X$Ph_hat_diur <- L$yhat
+
+##
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_diur[itest], col = 2)
+
+## The score, compare it to the "simpler" models
+rmse4 <- rmse(X$Ph[itest] - X$Ph_hat_diur[itest])
+rmse(X$Ph[itest] - X$Ph_hat_lpopt[itest])
+rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
+```
+Do we get better forecasts?  
+
+*Yes, including the splines for the diurnal curve improved the RMSE to `r round(rmse4, 3)`.*
+
+\pagebreak
+
+**(Optional)** How to choose the degrees of freedom df? maybe use AIC or BIC?
+(Out of currect scope) Use Fourier series instead as basis functions for the diurnal curve.
+```{r q3_fourier1, echo=FALSE, warning=FALSE, results='hide'}
+## We could use Fourier series as base functions
+## Fourier series for one day of hourly values
+x <- (0:23 + 0.5) / 24
+n_harmonics <- 4
+L <- lapply(1:n_harmonics, function(i) {
+    val <- data.frame(sin(i * x * 2 * pi), cos(i * x * 2 * pi))
+    names(val) <- paste0(c("sin_", "cos_"), i)
+    return(val)
+})
+Xtmp <- do.call("cbind", L)
+##
+par(mfrow = c(1,1))
+plot(Xtmp$sin_1, type = "b")
+for(i in 2:ncol(Xtmp)) {
+    lines(Xtmp[ ,i], col = i, type = "b")
+}
+##
+#plot(Xtmp[ ,ncol(Xtmp)], type = "b")
+## A linear combination can form any harmonic function
+plot(apply(runif(n_harmonics * 2) * t(Xtmp), 2, sum), type = "b")
+```
+How many harmonics make sense to maximum include when the period is in 24 steps?
+3
+
+```{r q3_fourier2, echo=FALSE, warning=FALSE, results='hide'}
+
+## Fit a diurnal curve with Fourier series as base functions
+tmp <- fs(X$tday/24, n_harmonics=3)
+tmp <- do.call("cbind", tmp)
+
+Xfit <- cbind(X,tmp)
+
+frml <- as.formula(Ph ~ sin_1 + cos_1 + sin_2 + cos_2 + sin_3 + cos_3 + Ta + G)
+
+## Tune the low-pass coefficients
+result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml=frml, data=Xfit[itrain, ], method="L-BFGS-B")
+
+result
+
+## But now we can also get the fit and the predictions
+L <- obj(result$par, frml, Xfit, itrain, return_fit = TRUE)
+
+summary(L$fit)
+
+X$Ph_hat_fs_diur<- L$yhat
+
+##
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_fs_diur[itest], col = 2)
+
+## The score, compare it to the "simpler" models
+rmse(X$Ph[itest] - X$Ph_hat_fs_diur[itest])
+rmse(X$Ph[itest] - X$Ph_hat_diur[itest])
+rmse(X$Ph[itest] - X$Ph_hat_lpopt[itest])
+rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
+```
+\pagebreak
+
+# Q4 - Recursive least squares
+
+```{r q4_ini, echo=FALSE, warning=FALSE, results='hide'}
+sapply(dir("functions",full.names=TRUE), source)
+
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+
+## Make a data.frame with synced observations and NWPs
+k <- 24
+X <- data.frame(t = Data$t, 
+                Ph = Data$Ph4, 
+                Ta = lag_vector(Data$Tanwp[ ,pst("k",k)],k), 
+                G = lag_vector(Data$Gnwp[ ,pst("k",k)],k), 
+                tday = Data$tday)
+```
+
+```{r q4_rls_fun, echo=FALSE, warning=FALSE, results='hide'}
+
+## A function for fitting a recursive least squares estimation
+rls <- function(formula, lambda, data, k) {
+    ## R build-in function for setting up linear regression model
+    mf <- model.frame(formula, data, na.action = na.pass)
+    ## The model output
+    y <- mf[ ,1]
+    ## The design matrix
+    X <- model.matrix(formula, mf)
+
+    ## The number of observations
+    n <- nrow(X)
+    ## The number of parameters
+    p <- ncol(X)
+    ## Parameter matrix
+    Theta <- matrix(as.numeric(NA), nrow = n, ncol = p)
+    ## The predictions
+    yhat <- as.numeric(rep(NA,n))  
+    ## The parameter vector
+    theta <- matrix(rep(0,p), ncol = 1)
+    
+    ## Start value for the parameter covariance P
+    P <- 10000 * diag(1, p)
+    ## Use the inverse in the RLS
+    R <- solve(P)
+    
+    ## Iterate through and estimate the parameters
+    for (i in 1:(n-k)) {
+        x <- matrix(X[i, ])
+        ## Check for NAs in inputs and output
+        if(all(!is.na(x)) & !is.na(y[i])){
+            ## Update
+            R <- lambda * R + x %*% t(x)
+            theta <- theta + solve(R, x) %*% (y[i] - t(x) %*% theta)
+            Theta[i, ] <- t(theta)
+        }
+        ## Predict
+        x <- matrix(X[i+k, ])
+        if(all(!is.na(x))){
+            yhat[i+k] <- t(x) %*% theta
+        }
+    }
+    
+    ## Return a list
+    L <- list()
+    L$residuals <- y - yhat
+    L$X <- X
+    L$y <- y
+    L$Theta <- Theta
+    return(L)
+}
+```
+```{r q4_rls_sim, echo=FALSE, warning=FALSE, results='hide'}
+## Generate some data from a linear model
+n <- 200
+x <- runif(n)
+beta0 <- 2
+beta1 <- -3
+y <- beta0 + beta1 * x + rnorm(n, sd = 0.1)
+
+## Try to estimate the parameters
+lm(y ~ x)
+plot(x, y)
+
+## Change the coefficients and generate more data
+x1 <- runif(n)
+beta0 <- -2
+beta1 <- 3
+y1 <- beta0 + beta1 * x1 + rnorm(n, sd = 0.1)
+
+## Try to estimate the parameters
+lm(y1 ~ x1)
+plot(x1, y1)
+
+## Put together in one "design matrix"
+X <- data.frame(y=c(y,y1), x=c(x,x1))
+plot(X$x, X$y)
+
+## Fit a linear regression on the binded data
+lm(y ~ x, X)
+
+## Fit a recursive linear regression on the binded data
+val <- rls(y ~ x, lambda = 0.8, data = X, k = 1)
+
+## Plot the tracked parameters
+plot.ts(val$Theta)
+
+```
+
+Does lm() estimate the parameters well on the combined data?  
+
+*No,* **lm()** *can estimate the coefficientes of the individual series but when they are combined it can not find the parameters since it is not anymore a line.*  
+
+Does rls()?   
+*Yes, using* **rls()** *it is possible to estimate the parameters of the combined data.*
+
+Try to change the forgetting factor $\lambda$. What happens when it is set to 1 compared to the results obtained from lm()?  
+
+*The forgetting factor tells how much weight the model give to older data, $\lambda = 0$ means that the model "lives in the present" and ignores previous data; $\lambda = 1$ means that the model "remebers" everything. ASetting $\lambda = 1$ the last coefficients are very close to those obtained by lm().*
+```{r q4_rls_lamda, echo=FALSE, warning=FALSE, results='hide'}
+## change the forgetting factor lambda
+val <- rls(y ~ x, lambda = 1, data = X, k = 1)
+
+## Plot the tracked parameters
+plot.ts(val$Theta)
+
+val$Theta[c(199,399),]
+
+## compare to lm()
+lm_q4 <- lm(y ~ x, X)
+lm_q4$coefficients
+```
+Is there a trade-off between variance and bias (i.e. over- and under-fitting) related to $\lambda$?  
+*Yes, the forgetting coefficient has to be chosen properly otherwise the model will not be fitted properly.*
+
+\pagebreak
+
+# Q5 - Load forecast with RLS
+
+Now we will use RLS for fitting the coefficients, hence they can change over time.
+```{r q5_ini, echo=FALSE, warning=FALSE, results='hide'}
+
+## Packages and functions used
+require(splines)
+sapply(dir("functions",full.names=TRUE), source)
+
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+```
+
+```{r q5_forecast1, echo=FALSE, warning=FALSE, results='hide'}
+## RLS for load forecasting
+
+## Make a data.frame with synced observations and NWPs
+k <- 24
+X <- data.frame(t = Data$t, 
+                Ph = Data$Ph4, 
+                Ta = lag_vector(Data$Tanwp[ ,pst("k",k)],k), 
+                G = lag_vector(Data$Gnwp[ ,pst("k",k)],k), 
+                tday = Data$tday)
+
+## Make a training set, first 3 month, and a test set
+## Just keep the indexes
+itrain <- which(per("2010-09-01",X$t,"2011-02-01"))
+itest <- which(per("2011-02-01",X$t,"2011-04-01"))
+
+## Cut only the nessecary period
+X <- X[per("2010-09-01",X$t,"2011-04-01"), ]
+
+## Fit with RLS
+fit <- rls(Ph ~ bs(tday, df=3) + Ta + G, 
+           lambda = 0.99, 
+           data = X, 
+           k = k)
+
+## Predictions
+X$yhat <- fit$y - fit$residuals
+
+## Plot them for a period
+i <- per("2010-10-01",X$t,"2010-11-01")
+plot(X$t[i], X$Ph[i], type = "l")
+lines(X$t[i], X$yhat[i], type = "l", col = 2)
+
+## The tracked coefficients
+plot.ts(fit$Theta[i, ])
+
+```
+* How about the forecasts, do they look fine?  
+*No, the load forecast does not seem to follow properly the actual load from the test set.*  
+
+* The tracked coefficients (the $\beta$s kept in $\theta$), do they change?  
+*The coefficients seem to be fluctuating too much.*  
+
+* What was $\lambda$ set to? it that optimal?
+**$\lambda$** *was set to 0.99 but it doesn't seem to be optimal*
+
+```{r q5_1st_period, echo=FALSE, warning=FALSE, results='hide'}
+## Check the first period
+i <- per("2010-09-01",X$t,"2010-10-01")
+plot(X$t[i], X$Ph[i], type = "l")
+lines(X$t[i], X$yhat[i], type = "l", col = 2)
+
+## The tracked coefficients
+plot.ts(fit$Theta[i, ])
+
+```
+* Are the forecasts good the first week?  
+*No, the forecast follow somehow the trend of the load but not the peaks and there seems to be a lag between the observed values and the forecasted ones.*
+
+* What about the coefficients?  
+*During the first period the coefficients vary a lot (see the y-axis of hte Theta-graph). This is because the model has not enough "history/memory" to properly predict.*
+
+Now, since the forecasts are poor until the coefficients are tracked, then make a "burn-in period", which simply means that a period in the beginning of the training set is left out in the score evaluation.  
+
+```{r q5_optimise, echo=FALSE, warning=FALSE, results='hide'}
+## Define an objective function for tuning the prm (i.e. lp coefficients and lambda)
+
+## Extend the objective function to have a "burn-in" period (the score is only evaluated on indexes in ieval)
+obj <- function(prm, frml, data, k, return_fit = FALSE, ieval = 1:nrow(data)) {
+    print(prm)
+    ## Apply a low-pass filter on the input
+    data$Ta <- lp_vector(data$Ta, a1 = prm[1])
+    data$G <- lp_vector(data$G, a1 = prm[2])
+    lambda <- prm[3]
+    fit <- rls(as.formula(frml), lambda, data, k)
+    ## Evaluate only on the ieval rows
+    print(score <- rmse(fit$residuals[ieval]))
+    if(return_fit){
+        return(fit)
+    }else{
+        return(score)
+    }
+}
+
+## Set ieval (here don't evaluate on the first 14 days
+ieval <- itrain[-1:-(24*14)]
+
+## Test objective function
+frml <- "Ph ~ bs(tday,df=3) + Ta + G"
+obj(c(0.95,0.95,0.99), frml, X[itrain, ], k = k, ieval = ieval)
+
+## Tune the parameters
+result <- optim(c(0.95,0.95,0.99), obj, lower = c(0.3,0.3,0.9), upper = c(0.999,0.999,0.999), frml = frml, data = X[itrain, ], k = k, ieval = ieval, method = "L-BFGS-B")
+
+## Return the fit
+fit <- obj(result$par, frml, X, k = k, return_fit = TRUE)
+
+## Predictions
+X$Ph_hat_rls <- fit$y - fit$residuals
+
+## Plot the test set
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_rls[itest], col = 2)
+```
+* Are the forecasts good the first week?  
+*By removing the first period (burn-in period) and optimizing the parameters the forecast became better.*
+
+* What about the coefficients, did they change?
+*The coefficients are now more stable now and the range in which they vary is much smaller*
+
+```{r q5_forecast2, echo=FALSE, warning=FALSE, results='hide'}
+## The score on the test set
+rmse5 <- rmse(X$Ph[itest] - X$Ph_hat_rls[itest])
+
+## See how the coefficients changed over time
+## Plot for the test set
+plot(X$t[itest], fit$Theta[itest], ylim=range(fit$Theta[itest, ],na.rm=TRUE), type = "n")
+lines(X$t[itest], fit$Theta[itest,1], col = 1)
+lines(X$t[itest], fit$Theta[itest,2], col = 2)
+lines(X$t[itest], fit$Theta[itest,3], col = 3)
+```
+  * Did the forecast improve? 
+*Yes, there was an improvement in the forecast when using RLS. The RMSE from `r round(rmse4, 3)` to `r round(rmse5, 3)` compared to using the tuned low-pass filter.* 
+
+  * Does the coefficients change over time?
+*Yes, the coefficients are now changing over time perhaps in a seasonal way.*
+
+# Q6 - Solar forecasting
+
+Now we can "easily" find a model which is useful for forecasting solar, e.g. the power generation on a PV panel. In the exercise, we will actually just use the observed global radiation as the solar power, hence this is somewhat a little bit simplified case. However, these observations contain quite a few deviations: shadowing in the late morning hours from a chimney, some tilt of the sensor and also some saturation.
+
+```{r q6_ini, echo=FALSE, warning=FALSE, results='hide'}
+
+## Packages used
+require(splines)
+
+## Source functions
+sapply(dir("functions",full.names=TRUE), source)
+
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+```
+
+Simple linear regression model is fitted:
+```{r q6_linear_reg, echo=FALSE, warning=FALSE, results='hide'}
+## Make a data.frame with synced observations and NWPs
+k <- 24
+X <- data.frame(t=Data$t, 
+                Ps=Data$G, 
+                G=lag_vector(Data$Gnwp[ ,pst("k",k)],k),
+                tday=Data$tday)
+
+X[ X$tday <= 5 | 18 < X$tday, -1] <- NA
+
+## Divide the period into a training set and a test set
+## Just keep the indexes
+tstart <- "2011-03-01"
+tstart_train <- "2011-04-10"
+tend <- "2011-05-01"
+X <- X[per(tstart,X$t,tend), ]
+itrain <- which(per(tstart,X$t,tstart_train))
+itest <- which(per(tstart_train,X$t,tend))
+
+## Plot (see functions/plotmulti.R)
+plotmulti(X, c("Ps|G"))
+
+## See the scatter plot
+plot(X$G, X$Ps)
+
+## Fit a linear regression model
+fit <- lm(Ps ~ G, X[itrain, ])
+abline(fit)
+
+## RMSE on test set
+X$residuals_lm <- X$Ps - predict(fit, X)
+rmse(X$residuals_lm[itest])
+
+plotmulti(X[itrain[1:300], ], c("Ps|G","residuals_lm"))
+```
+Do the forecasts seem to be good?  
+*The forecast seems to match in some parts but it is not good.*  
+
+Can you spot any systematic patterns?  
+*There are some periods (several days in a row) where the prediction is above the observed value, and some days where it is the other way around.*
+
+```{r q6_residuals, echo=FALSE, warning=FALSE, results='hide'}
+## Explore the residuals
+boxplot(X$residuals_lm ~ X$tday)
+
+## Divide data into morning and afternoon
+## Only morning
+Xmorning <- X[asPlt(X$t)$hour <= 12, ]
+plot(Xmorning$G, Xmorning$Ps)
+abline(lm(Ps ~ G, Xmorning))
+##
+Xafternoon <- X[asPlt(X$t)$hour > 12, ]
+points(Xafternoon$G, Xafternoon$Ps, col = 2)
+abline(lm(Ps ~ G, Xafternoon), col = 2)
+```
+
+Do you find any systematic patterns?
+*Yes, specially in the middle of the day the spread is much bigger. In the mornings the residuals are mainly below 0, while in the afternoon they are greater than 0.*
+
+What can cause the found differences in the relation between NWP global radiation (Gnwp) and the observed solar power (i.e. observed global radiation) Ps?
+*There can be some shadding that appears in the morning, differences with the orientations. Also *
+
+Now, define a model the relation between the solar power and the global radiation NWP is conditional on the time of day
+
+```{r q6_splines, echo=FALSE, warning=FALSE, results='hide'}
+## Use a base spline model with lm
+## Use the time of day to calculate base splines and multiply with G
+##   in this way the function between Ps and G can change conditional on time of day
+fit_bs_lm <- lm(Ps ~ bs(tday, df=10) * G, X[itrain, ])
+
+X$residuals_bs_lm <- X$Ps - predict(fit_bs_lm, X)
+
+rmse(X$residuals_bs_lm[itest])
+
+## See if that helps
+boxplot(X$residuals_lm ~ X$tday, ylim=c(-400,400))
+boxplot(X$residuals_bs_lm ~ X$tday, ylim=c(-400,400))
+
+## Plot forecasts for the test set
+tmp <- X[itest, ]
+plot(tmp$t, tmp$Ps, type="l")
+lines(tmp$t, tmp$Ps - tmp$residuals_lm, col=2)
+lines(tmp$t, tmp$Ps - tmp$residuals_bs_lm, col=3)
+```
+
+
+```{r q6_splines_rls, echo=FALSE, warning=FALSE, results='hide'}
+#Use a base spline model with rls
+
+## Write an objective function calculating the score
+obj <- function(prm, frml, data, k, ieval = 1:nrow(data)) {
+    print(prm)
+    ## Apply a low-pass filter on the input
+    lambda <- prm[1]
+    fit <- rls(as.formula(frml), lambda, data, k)
+    ## Evaluate only on the ieval rows
+    print(score <- rmse(fit$residuals[ieval]))
+    return(score)
+}
+
+## Define the model formula
+frml <- "Ps ~ bs(tday, df=10) * G"
+
+## To have a "burn-in" period, then set ieval, such the first 5 days are not included in calculating the score
+ieval <- itrain[-1:-(24*14)]
+
+## Optimize the forgetting factor lambda
+result <- optimize(obj, lower = 0.9, upper = 1, frml = frml, data = X[itrain, ], k = k, ieval = ieval)
+
+result$minimum
+
+## Calculate the forecasts
+fit <- rls(as.formula(frml), lambda = result$minimum, X, k)
+X$residuals_bs_rls <- fit$residuals
+## Plot
+tmp <- X[itest, ]
+plot(tmp$Ps, type = "l")
+lines(tmp$Ps - tmp$residuals_bs_rls, col = 2)
+lines(tmp$Ps - tmp$residuals_bs_lm, col = 3)
+
+rmse(X$residuals_bs_rls[itest])
+rmse(X$residuals_bs_lm[itest])
+```
+```{r q6_kernel, echo=FALSE, warning=FALSE, results='hide'}
+## What about a kernel model?
+
+## Wrap the leave-one-out in a function which returns the score
+obj <- function(h, frml, data, k = k, ieval = 1:nrow(data), n_min=10, return_yhat = FALSE){
+    ## Keep the output in yhat, only for ieval points
+    yhat <- sapply(ieval, function(i){
+        ## Check if there is enough points to fit
+        if((i-k) < n_min){ return(NA) }
+        if(is.na(data$tday[i])){ return(NA) }
+        ## Only use values available k steps behind (otherwise future values would be used)      
+        ipast <- 1:(i-k)
+        ## Only everything before the i'th observation will be included in the fit
+        fit <- lm(as.formula(frml), data[ipast, ], weights = epanechnikov(data$tday[i], data$tday[ipast], h=h))
+        ## Now predict for the i point (for the k'th horizon)
+        predict(fit, newdata = data[i, ])
+    })
+    ##
+    if(return_yhat){
+        return(yhat)
+    }else{
+        ## The score value
+        nm <- all.vars(as.formula(frml))[1]
+        val <- rmse(data[ieval,nm] - yhat)
+        ##
+        print(pst("h = ",h,", val = ",val))
+        ##
+        return(val)
+    }
+}
+
+frml <- "Ps ~ G"
+h <- 3
+ieval <- itrain[-1:-(24*14)]
+obj(h, frml, X, k, ieval)
+
+result <- optimize(obj, lower = 0.9, upper = 4, frml = frml, data = X[itrain, ], ieval = ieval, k = k)
+
+result
+
+Ps_hat <- obj(h=result$minimum, frml, X, k, return_yhat = TRUE)
+X$residuals_kern <- X$Ps - Ps_hat
+boxplot(X$residuals_kern ~ X$tday, ylim=c(-400,400))
+```
+
+```{r q6_compare, echo=FALSE, warning=FALSE}
+## Compare
+tmp <- X[itest, ]
+plot(tmp$Ps, type = "l")
+lines(tmp$Ps - tmp$residuals_bs_rls, col = 2)
+lines(tmp$Ps - tmp$residuals_bs_lm, col = 3)
+lines(tmp$Ps - tmp$residuals_kern, col = 4)
+
+
+#model comparison
+Model <- c("Kernel",
+                "base spline and lm",
+                "base spline and rls", 
+                "lm")
+RMSE <- c(rmse(X$residuals_kern[itest]),
+                       rmse(X$residuals_bs_lm[itest]),
+                       rmse(X$residuals_bs_rls[itest]), 
+                       rmse(X$residuals_lm[itest]))
+                     
+data.frame(Model, RMSE)
+
+```
+How can you decide which model is better?  
+*Based on the RMSE and the plots, "Base spline and RLS" is the model that predicts better the solar power.*
+
+Do you find differences between the prediction performance of the models?  
+*Yes, specially between when only the Linear Model (lm) is used because it lacks the ability to adapt the variance with time*
+
+\pagebreak

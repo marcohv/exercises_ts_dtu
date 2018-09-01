@@ -1,0 +1,622 @@
+---
+title: \Large Excercise 2 - Grey-box models and model selection
+author: "Marco Hernandez Velasco"
+date: "August 2018"
+output: 
+  pdf_document:
+    citation_package: natbib
+bibliography: [references.bib, packages.bib]
+---
+```{r setup_bibliography, include=FALSE}
+# automatically create a bib database for R packages
+rm(list=ls()) # remove all variables in memory
+
+knitr::write_bib(c(.packages(),  #make a bibliography for the packages
+              #packages used that will be cited
+                #basic packages used for Rmarkdown
+                'knitr', 'rmarkdown',  
+                #actual packages used  to solve
+                'tidyverse', 'ctsmr'),   
+                'packages.bib') #file num to which the references will be saved to
+
+#define other general chunk settings
+knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
+                      fig.height = 4, #figures height for all chunks
+                      fig.align = "center") 
+```
+@* `r #includes all references in file, even those not mentioned in the text `
+
+```{r initialize, message = FALSE, echo = FALSE}
+library(readxl) # to import Excel files
+library(tidyverse) # to use tidy data
+library(ctsmr)
+
+## Init by deleting all variables and functions
+rm(list=ls())
+## Set the working directory
+setwd(".")
+
+## Source the scripts with functions in the "functions" and "models" folder
+files <- dir("functions", full.names=TRUE)
+for(i in 1:length(files)) source(files[i])
+
+## Use the ctsmr package
+library(ctsmr)
+```
+
+
+# Q1 - Fit and Validate
+ The exercise is focused on grey-box modelling of the heat dynamics of a building using stochastic differential equations (SDEs). The properties of the PRBS signal and the use of likelihood ratio tests for model selection are considered.  
+
+* The data consists of averaged values over five-minute intervals of:
+    + Ti (yTi in data) the average of all the indoor temperatures measured (one in each room in the building). The sensors were hanging approximately in the center of each room.
+    + Phi-h (Ph in data) the total heat output for all electrical heaters in the building (kW).
+    + Ta (Ta in data) the ambient temperature. (notice, that in other material Te is used as the ambient (external) temperature. In this exercise Te is used as envelope temperature).
+    + G (Ps in the data) the global radiation (kW/m2).
+    + Ws (Ws in data) the wind speed (m/s)  
+```{r q1_ini, results = 'hide', echo = FALSE}
+## Read the data into a data.frame
+X <- read.csv("inputPRBS1.csv",sep=";",header=TRUE)
+#5 min interval (in seconds) starting on this date
+X$timedate <- asP("2009-02-05 14:26:00)") + X$t * 3600
+
+```
+
+
+```{r q1_plot, echo=FALSE, warning=FALSE, results='hide'}
+## Plot the time series (see "functions/setpar.R" to see how the plot is setup)
+## Keep the default plotting parameters for resetting the plotting device below
+def.par <- par(no.readonly=TRUE)
+##
+setpar("ts",mfrow=c(4,1))
+gridSeq <- seq(asP("2009-01-01"),by="days",len=365)
+## 
+plot(X$timedate,X$yTi,type="n",ylab="yTi")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$yTi)
+## 
+plot(X$timedate,X$Ta,type="n",ylab="Ta")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$Ta)
+## 
+plot(X$timedate,X$Ph,type="n",ylab="Ph")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$Ph)
+## 
+plot(X$timedate,X$Ps,type="n",ylab="Ps")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$Ps)
+##
+plotTSXAxis(X$timedate,format="%Y-%m-%d")
+## Set the plotting parameters to default again
+par(def.par)
+layout(1)
+```
+## Generate a new object of class ctsm.
+```{r q1_ctsm_prop, echo=FALSE, warning=FALSE, results='hide'}
+## Generate a new object of class ctsm.
+model <- ctsm$new()
+## "ctsm" is a class, which has fields and methods, which are used for carrying out the modelling
+class(model)
+## See the fields and methods
+ctsm
+## or
+str(ctsm)
+str(model)
+
+## We can now access a field, e.g. to see that there are no state variables defined
+model$states
+```
+Now we can add a system equation (and thereby also a state variable) with the addSystem() function.
+
+  * Note that the deterministic part of the SDE is multiplied with dt.
+  * Note that the stochastic part is multiplied with system noise process dw1. 
+  * Note that the variance of the system noise is exp(p11), where exp() is the exponential function and p11 is the parameter. 
+  * Since the variance is strictly positive, but can be very close to zero, it is a good idea to take exp() of the parameter, since then p11 can go from -Inf to Inf but the exponential goes from 0 to Inf, with good resolution towards 0.
+
+```{r q1_eq, echo=TRUE, warning=FALSE, results='hide'}
+model$addSystem(dTi ~ ( 1/(Ci*Ria)*(Ta-Ti) + Aw/Ci*Ps + 1/Ci*Ph )*dt + exp(p11)*dw1)
+```
+
+```{r q1_ctsm_mod, echo=FALSE, warning=FALSE, results='hide'}
+## Now we can see that there is one state variable is defined
+model$states
+
+## Set the names of the inputs (simply the same as in the data.frame used for estimation below)
+model$addInput(Ta,Ps,Ph)
+
+## Set the observation equation: Ti is the state, yTi is the measured output
+model$addObs(yTi ~ Ti)
+
+## Set the variance of the measurement error
+model$setVariance(yTi ~ exp(e11))
+
+## Set the initial value of the value of the state at the start time (values where the estimation (i.e. optimization of the likelihood) starts) and also the lower and upper bound, which must contain the parameter value
+
+model$setParameter(  Ti = c(init=15  ,lb=0     ,ub=25 ) )
+
+## Set the initial values and bounds(upper bound -ub, lower bound -lb) for the optimization of the parameters
+model$setParameter(  Ci = c(init=1   ,lb=1E-5  ,ub=20 ) )
+model$setParameter( Ria = c(init=20  ,lb=10    ,ub=1E4) )
+model$setParameter(  Aw = c(init=20  ,lb=1     ,ub=300) )
+model$setParameter( p11 = c(init=1   ,lb=-30   ,ub=10 ) )
+model$setParameter( e11 = c(init=-1  ,lb=-50   ,ub=10 ) )
+```
+
+Estimate the parameters in the simple model Ti in Equation (1) and see the estimated values with summary(fit). Is the estimation successful (i.e. does the minimization of the negative loglikelihood converge?  
+
+\textcolor{blue}{The estimate is not successful since one of the estimates (Ria) is close to the lower boudnary of the model.}
+```{r q1_ctsm_est, echo=FALSE, warning=FALSE, results='hide'}
+## Run the parameter estimation
+fit <- model$estimate(X)
+## Note that for the estimation the following could be set (the default values fits the current case):
+##  firstorderinputinterpolation = FALSE, means zero order hold of the inputs between the sample points
+##  threads = 1, the optimization can use multiple threads (can create some crash issues)
+```
+```{r q1_ctsm_res1, echo=FALSE, warning=FALSE}
+## See the summary of the estimation
+summary(fit)
+```
+Actually, the initial value and the boundary for one of the parameters are poorly set. You can see if the parameter estimates are close to one of their boundaries from the values of df/dPar which is the partial derivative of the objective function (negative loglikelihood).
+```{r q1_ctsm_res2, echo=FALSE, warning=FALSE}
+## If any of the parameter estimates are close to the lower or upper bound then "dF/dPar" is significant compered to "dPen/dPar"
+summary(fit, extended = TRUE)
+```
+Correct one of the boundaries and re-estimate until the partial derivatives are
+all very small. Which boundary was not set appropriately?  
+
+\textcolor{blue}{The boundary of Ria needed to be corrected since the estimate was close to it.}
+
+```{r q1_ctsm_mod2, echo = FALSE, warning=FALSE, results='hide'}
+#same model again to correct the boundaries
+model2 <- ctsm$new()
+
+model2$addSystem(dTi ~ ( 1/(Ci*Ria)*(Ta-Ti) + Aw/Ci*Ps + 1/Ci*Ph )*dt + exp(p11)*dw1)
+
+## Now we can see that there is one state variable is defined
+model2$states
+
+## Set the names of the inputs (simply the same as in the data.frame used for estimation below)
+model2$addInput(Ta,Ps,Ph)
+
+## Set the observation equation: Ti is the state, yTi is the measured output
+model2$addObs(yTi ~ Ti)
+
+## Set the variance of the measurement error
+model2$setVariance(yTi ~ exp(e11))
+
+## Set the initial value of the value of the state at the start time (values where the estimation (i.e. optimization of the likelihood) starts) and also the lower and upper bound, which must contain the parameter value
+
+model2$setParameter(  Ti = c(init=15  ,lb=0     ,ub=25 ) )
+
+## Set the initial values and bounds(upper bound -ub, lower bound -lb) for the optimization of the parameters
+model2$setParameter(  Ci = c(init=1   ,lb=1E-5  ,ub=20 ) )
+model2$setParameter( Ria = c(init=20  ,lb=1    ,ub=1E4) )
+model2$setParameter(  Aw = c(init=20  ,lb=1     ,ub=300) )
+model2$setParameter( p11 = c(init=1   ,lb=-30   ,ub=10 ) )
+model2$setParameter( e11 = c(init=-1  ,lb=-50   ,ub=10 ) )
+
+## Run the parameter estimation
+fit2 <- model2$estimate(X)
+## Note that for the estimation the following could be set (the default values fits the current case):
+##  firstorderinputinterpolation = FALSE, means zero order hold of the inputs between the sample points
+##  threads = 1, the optimization can use multiple threads (can create some crash issues)
+```
+
+```{r q1_ctsm_mod2_summary, echo=FALSE, warning=FALSE}
+## See the summary of the estimation
+summary(fit2, extended = TRUE)
+```
+The one-step predictions (residuals) are estimates of the system noise (i.e. the realized values of the incremental dw of the Wiener process) added together with the observation noise. The assumptions are that the one-step predictions are white noise. Validate if this assumption is fulfilled, by plotting the autocorrelation function and the accumulated periodogram for the residuals. Is the model model suitable, i.e. does it describe the heat dynamics sufficiently?  
+
+\textcolor{blue}{The model is not sufficient since the residuals seem to be autocorrelated and there is information in the residuals that the model is not capturing. The periodogram should have all "frequencies" represented equally (horizontal line) but they are not. Also the accumulated periodogram should show equal distribution of "frequency" (diagonal line) and the residuls are clearly outside the blue lines (confidence intervals).}
+```{r q1_ctsm_mod2_residuals, echo=FALSE, warning=FALSE, eval = 'hide'}
+## Calculate the one-step predictions of the state (i.e. the residuals)
+tmp2 <- predict(fit2)[[1]]
+
+## Calculate the residuals and put them with the data in a data.frame X
+X$residuals <- X$yTi - tmp2$output$pred$yTi
+
+## Plot the auto-correlation function and cumulated periodogram in a new window
+par(mfrow=c(1,3))
+## The blue lines indicates the 95% confidence interval, meaning that if it is
+##  white noise, then approximately 19 out of 20 lag correlations will be inside.
+acf(X$residuals, lag.max=8*24)
+## The periodogram is the estimated energy spectrum in the signal
+spec.pgram(X$residuals)
+## The cumulated periodogram 
+cpgram(X$residuals)
+
+```
+It is possible to gain some information about what is missing in the
+model, with time series plots of the residuals and the inputs.
+Are there some systematic patterns in the residuals?  
+
+\textcolor{blue}{The residuals show a systematic pattern, specially after the second day. They are not behaving as white noise.}
+
+If yes, do they seem to be related to the inputs? To any specific events in the inputs?  
+\textcolor{blue}{There seems to be a systematic offset in the residuals, specially when the heater is off. We could assume that there is need for another state in order to take into account the thermal dynamics of air (fast changing) separately from the thermal changes of the walls or other objects in the building (slow changing).}
+
+```{r q1_time_series, echo=FALSE, warning=FALSE, results = 'hide'}
+## Time series plots of the inputs and residuals
+tmp <- X
+
+## Plot the residuals
+## Prepare a time series plot (see "functions/setpar.R")
+setpar("ts",mfrow=c(5,1))
+gridSeq <- seq(asP("2009-01-01"),by="days",len=365)
+##
+plot(tmp$timedate,tmp$residuals,type="n",ylab="residuals")
+abline(v=gridSeq,h=0,col="grey92")
+lines(tmp$timedate,tmp$residuals)
+title(main=as.character(match.call())[2],line=-2,cex.main=2)
+## 
+plot(tmp$timedate,tmp$Ph,type="n",ylab="Ph")
+abline(v=gridSeq,h=0,col="grey92")
+lines(tmp$timedate,tmp$Ph)
+## 
+plot(tmp$timedate,tmp$yTi,type="n",ylab="yTi")
+abline(v=gridSeq,h=0,col="grey92")
+lines(tmp$timedate,tmp$yTi)
+lines(tmp$timedate,tmp$yTi-tmp$residuals,col=2)
+legend("bottomright",c("Measured","Predicted"),lty=1,col=1:2,bg="grey95")
+## 
+plot(tmp$timedate,tmp$Ta,type="n",ylab="Ta")
+abline(v=gridSeq,h=0,col="grey92")
+lines(tmp$timedate,tmp$Ta)
+##
+plot(tmp$timedate,tmp$Ps,type="n",ylab="Ps")
+abline(v=gridSeq,h=0,col="grey92")
+lines(tmp$timedate,tmp$Ps)
+##
+plotTSXAxis(tmp$timedate,format="%Y-%m-%d")
+## Set the plotting parameters to default again
+par(def.par)
+layout(1)
+
+```
+\pagebreak
+
+# Q2 - Extend the simplest model
+
+First the same model but now using the wrapped function Ti where the model is defined.
+
+```{r q2_ini, results = 'hide', echo = FALSE}
+rm(list=ls())
+## Set the working directory
+setwd(".")
+
+## Source the scripts with functions in the "functions" and "models" folder
+files <- dir("functions", full.names=TRUE)
+for(i in 1:length(files)) source(files[i])
+
+## Use the ctsmr package
+library(ctsmr)
+
+## Read the data into a data.frame
+X <- read.csv("inputPRBS1.csv",sep=";",header=TRUE)
+X$timedate <- asP("2009-02-05 14:26:00)") + X$t * 3600
+```
+
+```{r q2_ti, echo=FALSE, warning=FALSE, results = 'hide'}
+## First go and open the file "functions/Ti.R". The model Ti is defined in there.
+## Run the parameter optimization for the first model
+fitTi <- Ti(X)
+## Analyze the results (If you want in RStudio not to have external plot windows, change "newdev", maybe the default value in "functions/analyzeFit.R")
+analyzeFit(fitTi, newdev = FALSE)
+```
+\pagebreak
+
+**RC-network of the most simple model extended with a state in the building envelope TiTe**
+
+```{r q2_tite, echo=FALSE, warning=FALSE, results = 'hide'}
+## Run the parameter optimization
+fitTiTe <- TiTe(X)
+## Analyze the results
+analyzeFit(fitTiTe, newdev = FALSE)
+```
+\pagebreak
+
+**RC-network of the most simple model extended with a state in the heater TiTh.**
+
+```{r q2_tith, echo=FALSE, warning=FALSE, results = 'hide'}
+## Run the parameter optimization
+fitTiTh <- TiTh(X)
+## Analyze the results
+analyzeFit(fitTiTh, newdev = FALSE)
+```
+\pagebreak
+
+**RC-network of the most simple model extended with a state in which the solar radiation enters TiTm.**
+
+```{r q2_titm, echo=FALSE, warning=FALSE, results = 'hide'}
+## Run the parameter optimization
+fitTiTm <- TiTm(X)
+## Analyze the results
+analyzeFit(fitTiTm, newdev = FALSE)
+```
+\pagebreak
+
+**RC-network of the most simple model extended with a state in the sensor TiTs.**
+
+```{r q2_tits, echo=FALSE, warning=FALSE, results = 'hide'}
+## Run the parameter optimization
+fitTiTs <- TiTs(X)
+## Analyze the results
+analyzeFit(fitTiTs, newdev = FALSE)
+```
+Are the extended models improved regarding the description of the dynamics (hint, analyse the residuals)?
+
+\textcolor{blue}{The models are improvements to the simplest model, at least based on the residuals analysis, specially TiTm. Although it is not optimal yet. It is still needed to optimize based on the likelihood and number of parameters in the model.}  
+
+# Q3 - Selection of model
+
+Use the script to carry out a likelihood ratio test of the simple model to each of the extended models. If the p-values show that more than one of the extended models are a significant improvement, it is suggested to select the extended model with the highest maximum likelihood.
+
+```{r q3_likelihood, echo=FALSE, warning=FALSE, results = 'hide'}
+## Which of the extensions have the highest likelihood?
+fitTiTe$loglik
+fitTiTh$loglik
+fitTiTm$loglik
+fitTiTs$loglik
+
+```
+Which of the extensions have the highest likelihood?  
+
+\textcolor{blue}{The TiTh has the highest likelihood}  
+
+Perform a likelihood ratio test:  
+
+**lambda = lik(smallerModel)/lik(largerModel)** ,  
+
+where the smallerModel is submodel of the largerModel and lambda is chi2(f) distributed with f=dim(smallerModel)-dim(largerModel). Page 20 in Madsen2006.
+
+```{r q3_likelihood_ratio, echo=FALSE, warning=FALSE, results = 'hide'}
+
+## Take the results of both models
+small <- fitTi
+large <- fitTiTh
+## Calculate the logLikelihood for both models from their fit
+logLikSmallModel <- small$loglik
+logLikLargeModel <- large$loglik
+## Calculate lambda which follows the chisquare distribution
+chisqStat <- -2 * (logLikSmallModel - logLikLargeModel)
+## It this gives a p-value smaller than confidence limit, i.e. 5\%, then the larger model is significant better than the smaller model
+
+prmDiff <- large$model$NPARAM - small$model$NPARAM
+## The p-value of the test, if it is <0.05 the larger model should be preferred over the smaller
+1 - pchisq(chisqStat, prmDiff)
+
+## liklihood ratio test wrapped in a function
+likRatioTest(fitTiTh, fitTi)
+
+```
+\textcolor{blue}{The p-value is very small indicating that the difference between the models is significant and that the improvement from one model to the other is very unlikely by chance.} 
+\pagebreak
+
+## Forward model selection
+
+**TiThTe**
+
+```{r q3_tithte, echo=FALSE, warning=FALSE, results = 'hide'}
+
+## The models which could be used in the next step are implemented in the following functions
+## Fit different models extended from TiTh
+fitTiThTe <- TiThTe(X)
+## Analyze the results
+analyzeFit(fitTiThTe, newdev = FALSE)
+```
+\pagebreak
+
+**TiThTs**
+
+```{r q3_tithts, echo=FALSE, warning=FALSE, results = 'hide'}
+## Fit different models extended from TiTh 
+fitTiThTs <- TiThTs(X)
+## Analyze the results
+analyzeFit(fitTiThTs, newdev = FALSE)
+```
+\pagebreak
+
+**TiThTm**
+
+```{r q3_tithtm, echo=FALSE, warning=FALSE, results = 'hide'}
+## Fit different models extended from TiTh
+fitTiThTm <- TiThTm(X)
+## Analyze the results
+analyzeFit(fitTiThTm, newdev = FALSE)
+```
+
+Which one of the three extended models should we select?  
+
+\textcolor{blue}{From the residuals graphs, the TiThTe model seems to be fitting the data better.} 
+
+```{r q3_fwd_sel_log, echo=FALSE, warning=FALSE, results = 'hide'}
+## Take the one with the highest likelihood, as in previous step.
+fitTiThTe$loglik
+fitTiThTs$loglik
+fitTiThTm$loglik
+
+## Check that the extension has a significant increase in the loglikelihood function
+likRatioTest(fitTiThTe, fitTiTh)
+
+```
+\textcolor{blue}{The log-Likelihood ratio test confirms that the TiThTe is the best mextension to the model.} 
+
+From here we should keep on extending the model, but for now no larger linear models are implemented here. From this points it is also likely that extensions to linear models compensate for non-linear or time-dependent effects.
+
+See the article *"Identifying suitable models for heat dynamics"*, it is included in the .zip file, the performance (i.e. ACF(e_k) etc.) '
+doesn't really change for models larger than TiThTe compared to the larger tested linear model.  Hence we should rather look in residuals for non-linear or transformations of the inputs in order to model the effects which are not described well in the current model.
+
+```{r q3_hlc, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+## The estimated  for the TiThTe model
+i <- which(names(fitTiThTe$xm) %in% c("Rea","Rie"))
+HLC <- 1 / sum(fitTiThTe$xm[i])
+HLC * 1000 ## W/C
+## The covariance for the two estimated R values
+cov <- diag(fitTiThTe$sd[i]) %*% fitTiThTe$corr[i,i] %*% diag(fitTiThTe$sd[i])
+
+## Calculate the uncertainty of the HLC value with a linear approximation to the covariance
+## The Jacobian, the derived of the HLC-value with respect to each estimate in fitTiThTe$xm[i]
+J <- t( sapply(1:length(i), function(ii,x){ -1/sum(x)^2 }, x = fitTiThTe$xm[i]) )
+## The estimated variance of HLC
+varHLC <- J %*% cov %*% t(J)    
+## and standard deviance
+sdHLC <- sqrt(varHLC)
+## Return the confidence interval
+c(HLC-1.96*sdHLC,HLC+1.96*sdHLC)*1000
+
+
+## Calculate the uncertainty of the HLC value with a simulation approach
+## Needed for multivariate normal distribution simulation
+require(MASS)
+## Generate multivariate normal random values
+Rsim <- mvrnorm(n=1000000,mu=fitTiThTe$xm[i],Sigma=cov)
+## For each realization calculate the HLC-value
+HLCsim <- 1/apply(Rsim,1,sum)
+## Estimate the 2.5% and 97.5% quantiles of the simulated values as a confidence interval
+quantile(HLCsim,probs=c(0.025,0.975))*1000
+
+```
+\pagebreak
+
+# Q4 - Pseudo Random Sequence Signals
+
+This part deals with Pseudo Random Sequence Signals. The function prbs() is an implementation of the n-stage feedback registers in the paper (see the function definition in "r/functions/prbs.R). 
+
+```{r q4_ini, results = 'hide', echo = FALSE}
+## Set the working directory
+setwd(".")
+## Source the files in the "functions" folder
+files <- dir("functions",full.names=TRUE)
+for(i in 1:length(files)) source(files[i])
+
+## Read the data into a data.frame
+tmp <- read.csv("inputPRBS1.csv",sep=";",header=TRUE)
+tmp$timedate <- asP("2009-02-05 14:26:00)") + tmp$t * 3600
+##
+X <- tmp
+```
+
+Do the plotting of the data. 
+```{r q4_plot, echo=FALSE, warning=FALSE, results = 'hide'}
+## Plot the time series (see "functions/setpar.R" to see how the plot is setup)
+## Keep the default plotting parameters for resetting the plotting device below
+def.par <- par(no.readonly=TRUE)
+##
+setpar("ts",mfrow=c(4,1))
+gridSeq <- seq(asP("2009-01-01"),by="days",len=365)
+## 
+plot(X$timedate,X$yTi,type="n",ylab="yTi")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$yTi)
+## 
+plot(X$timedate,X$Ta,type="n",ylab="Ta")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$Ta)
+## 
+plot(X$timedate,X$Ph,type="n",ylab="Ph")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$Ph)
+## 
+plot(X$timedate,X$Ps,type="n",ylab="Ps")
+abline(v=gridSeq,h=0,col="grey92")
+lines(X$timedate,X$Ps)
+##
+plotTSXAxis(X$timedate,format="%Y-%m-%d")
+## Set the plotting parameters to default again
+par(def.par)
+layout(1)
+
+```
+
+Which of the signals is a PRBS signal?
+\textcolor{blue}{The heater is a PRBS signal, with an on/off pseudo-random behavior.} 
+
+Which of the other signals are highly dependent on the PRBS signal?
+
+\textcolor{blue}{The indoor temperature, yTi, is highly dependent on the PRBS (heater) signal. When the heater is on the indoor temperature rises and when it is off it decreases.} 
+
+## Generate a PRBS signal
+
+Use the function defined in the file "functions/prbs.R", which generates a PRBS signal:
+    + n is the length of the register
+    + initReg just needs to be some initial value of 1,2,... it is the initial value of the registers and therefore only determines the start of the cycle.
+    + lambda is the length of the smallest period in which the signal can change, given in samples
+
+```{r q4_prbs, echo=FALSE, warning=FALSE, results = 'hide'}
+x <- prbs(n=6)
+acf(x, lag.max=length(x))
+##  prbs
+par(mfrow=c(3,1))
+plot(x,type="s")
+acf(x, lag.max=length(x))
+## See  to PRBS
+x <- prbs(n=6)
+## LagWithCycling to the right
+y <- lagWithCycling(x, lag=10)
+## cross cor.
+ccf(x,y, lag.max=length(x))
+```
+Generate the PRBS signals for the PRBS1 experiment, where a single signal controls all heaters in the building:
+  * n = 6
+  * lambda = 4
+Smallest period in one state for 5 minute sample period is then 4*5min=20min
+Settling time of the system (T_s) below the period (T_0) in: 
+      **lambda * (2^n-1) * 5 / 60 = 21 hours**
+
+```{r q4_prbs2, echo=FALSE, warning=FALSE, results = 'hide'}
+x <- prbs(n=6, initReg=666, lambda=4)
+x <- rep(x,2)
+## Concatenate PRBS med n=5, lambda=36:
+##   - Smallest period in one state: 36*5min/60 = 3h
+##   - Settling time below: 36 * (2^5-1) * 5 / 60 = 93 hours
+y <- prbs(n=5, initReg=666, lambda=36)
+##  NOTE high ACF due to lambda>1 (Simply due to repeated values)
+acf(y, lag.max=length(y))
+## Concatenate the two PRBS
+x <- c(x,y)
+## Plot it
+plot(1:length(x),x,type="s")
+```
+
+Just for seeing how to make multiple PRBS signals, which are uncorrelated, multiple PRBS signals are simply generated lagging the signals, such that they do not begin at the same time point:
+
+```{r q4_prbs3, echo=FALSE, warning=FALSE, results = 'hide'}
+## Just for seeing how to make multiple PRBS signals, which are uncorrelated
+## Multiple PRBS signals are simply generated lagging the signals, such that they do not begin at the same time point
+x1 <- prbs(n=6, initReg=666, lambda=4)
+n <- length(x1)
+x2 <- lagWithCycling(x1, lag=round(n/3))
+x3 <- lagWithCycling(x1, lag=round(2*n/3))
+## Check them
+ccf(x1,x2, lag.max=n)
+ccf(x1,x3, lag.max=n)
+## repeat them
+x1 <- rep(x1,2)
+x2 <- rep(x2,2)
+x3 <- rep(x3,2)
+## The long period
+x1.long <- prbs(n=5, initReg=667, lambda=36)
+n <- length(x1.long)
+x2.long <- lagWithCycling(x1.long, lag=round(n/3))
+x3.long <- lagWithCycling(x1.long, lag=round(2*n/3))
+## Check them
+ccf(x1.long,x2.long, lag.max=n)
+ccf(x1.long,x3.long, lag.max=n)
+## Concatenate them
+x1 <- c(x1,x1.long)
+x2 <- c(x2,x2.long)
+x3 <- c(x3,x3.long)
+## Plot them
+setpar("ts",mfrow=c(3,1))
+plot(x1,type="s")
+plot(x2,type="s")
+plot(x3,type="s")
+axis(side=1,xaxt="s")
+```
+
+
+
+\pagebreak
