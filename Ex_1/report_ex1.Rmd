@@ -10,13 +10,14 @@ bibliography: [references.bib, packages.bib]
 ```{r setup_bibliography, include=FALSE}
 # automatically create a bib database for R packages
 rm(list=ls()) # remove all variables in memory
+setwd(".") #set working directory
 
 knitr::write_bib(c(.packages(),  #make a bibliography for the packages
               #packages used that will be cited
                 #basic packages used for Rmarkdown
                 'knitr', 'rmarkdown',  
                 #actual packages used  to solve
-                'tidyverse', 'splines'),   
+                'tidyverse', 'splines', 'rgl'),   
                 'packages.bib') #file num to which the references will be saved to
 
 #define other general chunk settings
@@ -30,8 +31,6 @@ knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
 library(readxl) # to import Excel files
 library(tidyverse) # to use tidy data
 library(splines)
-
-rm(list=ls()) # remove all variables in memory
 ```
 
 # Q1 - Read data and lm in R
@@ -175,22 +174,23 @@ Try to vary the degrees of freedom (df). What happens to the base splines genera
 
 *A higher degree of freedom generates more base splines.*
 
-Try to vary the degree (degree). What happens to the base splines generated?
+Try to vary the degree (degree of the piece-wise polynomials, i.e. polynomials between the knot points). What happens to the base splines generated?
 
-*A higher degree changes the "shape" of the splines. Higher degree make polynomial or "curve" lines.*
+*A higher degree changes the "shape" of the splines. Higher degree of polynomial makes the fit "smoother" and more "curve" lines.*
 
 ```{r q2_df, results = 'hide', echo = FALSE}
 ## ----Degrees of freedom-----------------------------------------
 ## Change degrees of freedom (of the spline function)
 df <- 7
+degree <- 1
 ## Generate the base splines
-x_bs <- bs(x, df = df, intercept = TRUE)[ , ]
+x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
 ## Plot and add the quantiles
 plot_bs(x, x_bs)
 
 ## Change degree (of the piece-wise polynomials, i.e. polynomials between the knot points)
 df <- 7
-degree <- 1
+degree <- 4
 ## Generate the base splines
 x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
 ## Plot
@@ -200,7 +200,7 @@ plot_bs(x, x_bs)
 
 Give the knot points directly (using the knots argument). Give the knots as the quantiles of x, what happens when degree = 1 and what happens when degree = 3? 
 
-*Giving the knots directly we can change manually the breaking points. When defining the quantiles, we assign the knots depending on the amount of data. The degree changes the shape of the splines.*
+*Giving the knots directly we can change manually the breaking points of the splines. When defining the quantiles, we assign the possition of the knots depending on the amount of data. The degree changes the shape of the splines and how they adapt to the data between the knots.*
 
 ```{r q2_knot, results = 'hide', echo = FALSE}
 ## Specify knot points
@@ -212,8 +212,8 @@ knots
 
 ## Generate the base splines of degree = 1 with the knots as the quantiles
 ##
-## Note that the inner knots are given by the "knots" argument, the
-##   boundary knots are min(x) and max(x) (see ?bs "Boundary.knots")
+## Note that the inner knots are given by the "knots" argument, the boundary knots are min(x) and max(x) (see ?bs "Boundary.knots")
+
 x_bs <- bs(x, knots = knots[2:(length(knots)-1)], degree = 1, intercept = TRUE)[ , ]
 ## Plot
 plot_bs(x, x_bs)
@@ -240,7 +240,7 @@ x = c(seq(-1,0,len=200), seq(0,1,len=100), seq(1,2,len=500))
 
 ## Set df and degree
 df <- 7
-degree <- 1
+degree <- 2
 
 ## Generate the base splines of degree with the quantile knots
 x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
@@ -251,11 +251,12 @@ abline(v = knots)
 \pagebreak
 
 # Q3 - Base splines model
-Now we want to calculate the base splines as a function of the external temperature. And then use them as input to a linear regression model. In this way, it becomes a non-linear model The characteristics of *f()* depend on how the base splines are generated, so it does not have any direct parameters, therefore such a model is called a non-parametric model.
+Now we want to calculate the base splines as a function of the external temperature and then use them as input to a linear regression model. In this way, it becomes a non-linear model.  
+The characteristics of *f()* depend on how the base splines are generated, so it does not have any direct parameters, therefore such a model is called a non-parametric model.
 
 Try to fit a model, is it linear or how is it shaped?
 
-*The fitted model is not linear, but a polynomial fit. However there are some fit problems at the extremes.*
+*The fitted model is not linear, but a polynomial fit. However there are some fit problems at the extremes due to boundary bias.*
 
 ```{r q3_read, results = 'hide', echo = FALSE}
 ## Load the data
@@ -276,14 +277,13 @@ lines(xseq, predict(fit, newdata = data.frame(Te = xseq)))
 ```
 Try to change the degrees of freedom (df), what happens?
 
-*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a df=5 there is a good fit without overfitting.*
+*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a* **df=5** *there is a good fit in the extremes without overfitting.*
 
 ```{r q3_df, results = 'hide', echo = FALSE}
-## ----Degrees of freedom (df)-----------------------------------
+## ----Degrees of freedom (df)
+
 ## Build a model using base splines
-##
-## What should the df be?
-##
+
 fit <- lm(P ~ bs(Te, df=5), X)
 ## We get a coefficient for each base spline
 summary(fit)
@@ -295,10 +295,10 @@ lines(xseq, predict(fit, newdata=data.frame(Te=xseq)))
 
 ```{r q3_intercept, results = 'hide', echo = FALSE}
 
-## Use an intercept in lm() or in bs() gives nearly the same result
-##   using same number of parameters in the model
+## Use an intercept in lm() or in bs() gives nearly the same result using same number of parameters in the model
 fit <- lm(P ~ bs(Te, df=3), X)
 summary(fit)
+
 ## Plot the relation between external temperature and heat load
 plot(X$Te, X$P)
 ## We need to use predict to see the estimated function
@@ -320,7 +320,7 @@ Try to calculate and plot the triangular kernel and play around with the paramet
 
 How do they affect the shape of the kernel?
 
-*Changing the x_i moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
+*Changing the $x_i$ moves the center or peak of the kernel. Adjusting the h defines the width of the base to $\pm h$ steps from $x_i$.*
 
 ```{r q4_tri, results = 'hide', echo = FALSE}
 ## Plot a kernel
@@ -343,14 +343,14 @@ x = seq(-1 , 1, len = 100)
 ## See the shape
 plot(x, tri(x_i=0, x=x, h=0.4))
 ## Try to change the parameters (x_i and h) and add it to the plot
-points(x, tri(x_i=0.3, x=x, h=0.1), col = 2)
+points(x, tri(x_i=0.4, x=x, h=0.2), col = 2)
 ## Add some more
 ```
 
 Try to calculate and plot the Epanechnikov kernel and play around with the parameters.
 How do they affect the shape of the kernel?
 
-*Similarly to the triangular kernel, changing the x_i in the Epanechnikov kernel function moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
+*Similarly to the triangular kernel, changing the $x_i$ in the Epanechnikov kernel function moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
 
 ```{r q4_epanech, results = 'hide', echo = FALSE}
 
@@ -370,17 +370,13 @@ epanechnikov <- function(x_i, x, h)
 plot(x, epanechnikov(x_i=0, x=x, h=0.4))
 
 ## Try to change the parameters (x_i and h) and add it to the plot
-points(x, epanechnikov(x_i=0.1, x=x, h=0.3), col = 2)
+points(x, epanechnikov(x_i=0.2, x=x, h=0.3), col = 2)
 ## Add some more
 ```
 
 \pagebreak
 
 # Q5 - Locally weighted model with a kernel function
-
-Fit a locally weighted model for a single
-point and predict the heat load.
-Fit for a sequence and make the plot of the function. Try to change the bandwidth h. 
 
 ```{r q5_ini, results = 'hide', echo = FALSE}
 
@@ -399,6 +395,8 @@ tri <- function(x_i, x, h){
 
 ```
 
+Fit a locally weighted model for a singlepoint and predict the heat load.
+
 ```{r q5_local_w, results = 'hide', echo = FALSE}
 ## Fit a locally weighted model for some point 
 x_i <- 5
@@ -407,6 +405,7 @@ x_i <- 5
 fit <- lm(P ~ Te, data = X, weight = tri(x_i, X$Te, h=10))
 predict(fit, newdata = data.frame(Te=x_i))
 ```
+Fit for a sequence and make the plot of the function. Try to change the bandwidth h. 
 ```{r q5_bandwidth, echo= FALSE, message=FALSE, warning=FALSE, results='hide'}
 
 ## Fit a locally weighted model for a sequence
@@ -430,7 +429,7 @@ How does changing the h change the estimated function between Te and P?
 *A smaller h reduces the bandwith for the kernel function which takes less data points for the model fit. However, a very small h causes overfitting and if it comes to a part where the distance between points is larger than the h, then the line is fitted to 0. *
 
 What should the bandwidth h be?  
-*A bandwith between 6 and 7 gives a good fit. To find the best option a cross-validation has to be conducted to find the optimal.*
+*A bandwith between 6 and 7 seems to give a good fit. To find the best option a cross-validation has to be conducted to find the optimal.*
 \pagebreak
 
 # Q6 - Locally weighted model with a kernel function
@@ -497,7 +496,7 @@ rmse(X$P - P_hat)
 What happens to the RMSE score?  
 *Depending on the bandwith h, the RMSE score of the model changes.*
 What should the bandwidth h be set to?  
-*A h = 6 gives the lowest RMSE.*
+*At around h = 6 the model seems to have the lowest RMSE.*
 
 Of course we cannot use our time doing manually optimization, so use an optimizer to optimize the bandwidth. 
 
@@ -550,7 +549,7 @@ plot(X$Te, X$P)
 lines(x, P_hat)
 ```
 Does the result look reasonable for the locally weighted model?
-*Using the optimized h = 5.51, the model fits the data properly.*
+*Using the optimized h = 5.51, the linear model fits the data properly without showing signs of over/under fitting neither being biased in the extremes.*
 
 Use leave-one-out cross validation for the base spline model. 
 ```{r q6_bs_cv, echo = FALSE, warning=FALSE, results='hide'}
@@ -581,7 +580,7 @@ for(df in 3:10){
 
 ```
 Does the result look reasonable?
-*yes, the df = 6 gives a good fit to the data without overfitting and low boundary bias. The optimized RMSE is 325 which is also lower than the 329 that the Locally weighted model with h = 5.51 had*
+*Yes, the base splines model with df = 6 gives a good fit to the data without overfitting and low boundary bias. The optimized RMSE = 325 which is also lower than RMSE = 329 for the Locally weighted model with h = 5.51 in the previous question.*
 
 ```{r q6_bs_aic_bic, echo = FALSE, warning=FALSE, results='hide'}
 
@@ -603,7 +602,7 @@ for(df in 3:10){
 }
 ```
 For the base spline models a model selection criteria, such as AIC or BIC can be used. Try that for the base spline model and compare. Do you get the same results?   
-*The results of the AIC and BIC don't come the same result. AIC find a df = 6, while BIC optimizes to df = 5.*
+*The results of the AIC and BIC don't come the same result. AIC finds a df = 6 to be better while BIC optimizes to df = 5. If we only had the Information Criteria (AIC and BIC) disagreeing, it would be recommended to take the simplest model (df = 5). However since we also have claculated the RMSE we can use it to take the decision and go for a model with df = 6.*
 
 \pagebreak
 
@@ -611,7 +610,7 @@ For the base spline models a model selection criteria, such as AIC or BIC can be
 
 Until now, we have calculated the weights and base splines using the input to the model. What if we used another variable, but still fitted the same model?  
 
-Lets try to calculate the weights using the time t. By doing that we actually allow the coefficients in the model to change as a function of time. We would usually in this case add a t to the parameters.  
+Lets try to calculate the weights using the time *t*. By doing that we actually allow the coefficients in the model to change as a function of time. We would usually in this case add a *t* to the parameters indicating that they change over time. 
 
 ```{r q7_ini, results = 'hide', echo = FALSE}
 
@@ -619,7 +618,7 @@ Lets try to calculate the weights using the time t. By doing that we actually al
 X <- readRDS("soenderborg_2day.RDS")
 
 ## Load the splines package
-library(splines)
+library(splines) #part of Base R
 
 ## Define the triangular kernel function
 tri <- function(x_i, x, h){ 
@@ -635,7 +634,7 @@ rmse <- function(x){
 ```
 
 
-```{r q7_cond_t, echo = FALSE, warning=FALSE, results='hide'}
+```{r q7_cond_t, echo = FALSE, warning=FALSE, results='hide', fig.height = 6}
 ## Use t to calculate the weights used in the local fit
 
 ## Wrap the leave-one-out cross-validation in a function for an optimizer
@@ -679,8 +678,11 @@ plot(X$t, coef_intercept)
 plot(X$t, coef_Te)
 
 ```
+Describe how the coefficients change over time.  
 
-```{r q7_bs_cond, echo = FALSE, warning=FALSE, results='hide'}
+*The coefficient for the intercept reduces during the summer months while the coefficient for Te increases during that time (gets less negative).*
+
+```{r q7_bs_cond, echo = FALSE, warning=FALSE, results='hide', fig.height = 6}
 ## Do the same with base splines
 library(splines)
 
@@ -725,20 +727,268 @@ plot(bs(X$t, df=7, intercept=TRUE) %*% fit$coef[8:14], xlab = "Time", ylab = "Te
 ```
 
 What happens with the coefficients during the summer?
-*answer*
+*Similarly to the weighted model, the intercept coefficients for the splines model is reduced during the summer months while the coefficient for Te increases during that time (gets less negative).*
 
-Can you explain the result in relation to how the heating system of the building isoperating?
-*answer*
+Can you explain the result in relation to how the heating system of the building is operating?
+*For a heating system in a building, during the summer months, both coefficients are reduced meaning there is less or even 0 heating power (P) needed. During the winter months, the intercept increases to maintain a base temperature and the coefficient of Te is reduced (gets more "negative") to compensate for the negative temperatures during the cold months (in the linear model, negative x negative = postive heating power).*
 
 \pagebreak
 
 # Q8 - Semi- and conditional parametric models
-
-...
+In this question we will deal with two aspects:  
+  * How to apply a 2. order local model and use another type of kernel function  
+  * Investigate the effect of external temperature, conditional on the wind speed
 
 ```{r q8_ini, results = 'hide', echo = FALSE}
+## Load the data
+X <- readRDS("soenderborg_2day.RDS")
+
+## Load the splines package
+library(splines)
+
+## Define the triangular kernel function
+tri <- function(x_i, x, h){ 
+    val <- 1 - abs((x - x_i) / h)
+    val[val < 0] <- 0
+    return(as.numeric(val))
+}
+
+## The Epanechnikov kernel
+epanechnikov <- function(x_i, x, h)
+{
+    x_i <- as.numeric(x_i)
+    x <- as.numeric(x)
+    ## Epanechnikov kernel
+    u <- abs(x - x_i)
+    u <- u / h
+    val <- 3/4 * (1 - u^2)
+    ## Set values with |u|>1 to 0
+    val[abs(u)>1] <- 0
+    return(val)
+}
+
+## Define the RMSE score function
+rmse <- function(x){
+    sqrt(mean(x^2,na.rm=TRUE))
+}
+
+```
+**In the first part:**  
+
+2nd order inputs are included into the model, hence it is now a local polynomial model. By including these, the curvature of the function is better estimated, hence this can, when the function is "bending" a lot, lead to a better fit.   
+
+```{r q8_1, results = 'hide', echo = FALSE}
+## ----Second order local fit-------------------------------------
+## Extend the model using a second order input (simply square the input)
+
+## Calculate squared terms
+X$Te2 <- X$Te^2
+X$G2 <- X$G^2
+X$Ws2 <- X$Ws^2
+
+## Wrap the leave-one-out cross-validation in a function for an optimizer
+obj <- function(h, frml, data, kern){
+    P_hat <- rep(NA, nrow(data))
+    for(i in 1:nrow(data)){
+        i_subset <- (1:nrow(data))[-i]
+        ## The i'th observation will not be included in the fit
+        fit <- lm(as.formula(frml), data, subset = i_subset, weights = kern(data$Te[i], data$Te, h))
+        ## Now predict for the i'th observation
+        P_hat[i] <- predict(fit, newdata = data[i, ])
+    }
+    ## The score value
+    val <- rmse(data$P - P_hat)
+    ## Print it
+    print(paste0("h = c(",paste(h,collapse=", "),"), val = ",val))
+    ## Return the score
+    return(val)
+}
+
+## Tune the bandwidth and keep the results in a list
+frml <- "P ~ Te"
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = tri)
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+frml <- "P ~ Te + G + Ws" #Only linear terms
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = tri)
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+frml <- "P ~ Te + Te2 + G + Ws + Ws2" #wind and Te also quadratic, no interaction
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = tri)
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+frml <- "P ~ Te + Te2 + G + Ws + Ws2 + Te:Ws" #wind and Te also quadratic with interaction
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = tri)
+optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+frml <- "P ~ Te + Te2 + G + G2 + Ws + Ws2 + Te:Ws"
+result <- optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = tri)
+result <- optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+## Which is the best model?
+## Does is seem like one of the kernel function better?
+```
+Try changing the formula **frml** to find the model which minimizes the cross-validated
+score. What is the best model you can find, does it have any second order inputs?  
+
+*The best model using trial and error was a model with second order inputs for all variables and an interaction between Te:Ws. The selection is based on the value of the RMSE = 281.93 and RMSE = 280.82 with tri() and epanechnikov()  kernel functions respectively.*
+
+What happens to the bandwidth found with cross-validation when a 2. order term
+is included?  
+*Adding 2nd order terms to the formula increased the bandwith h.*
+
+Compare the results of the tri() and epanechnikov() kernel function. Does it seems
+like one of them lead to slightly better fits?
+*Yes, in general the Epanechnikov kernel function give slightly lower values of RMSE fo rhte same formula compared to the Triangular kernel function.*
+
+**In the second part:**  
+Investigate the effect of the external temperature conditional on the wind speed.
+
+*The heating power decreases linearly to the external temperature but the wind speed has a rather low little influence on it.* 
+
+```{r q8_2, results = 'hide', echo = FALSE}
+## ----Te conditional on Ws---------------------------------------
+## Investigate the effect of Te conditional on Ws
+## so how does the coefficient for Te change as a function of Ws?
+
+## First see the estimated mean conditioned on Te and Ws
+
+## Find index of summer and set measurements to NA
+isummer <- 151 < as.POSIXlt(X$t)$yday & as.POSIXlt(X$t)$yday <= 273
+X[isummer, -1] <- NA
+
+## Plot the relation between external temperature and heat load
+plot(X$Te, X$P)
+plot(X$Te, X$Ws)
+plot(X$Ws, X$Te)
+
+
+## ---Removed for the PDF report
+
+## Use the rgl package for 3d plotting
+
+#install.packages("rgl")
+#library(rgl)
+
+## Plot the points
+#open3d() ## Note: Do not use rgl.open()
+#points3d(X$Te, X$Ws, X$P, size=3, col="red")
+#aspect3d(c(1,1,1))
+#axes3d()
+#title3d(xlab="Te",ylab="Ws",zlab="P")
+```
+
+```{r q8_2_2, results = 'hide', echo = FALSE}
+
+## Wrap the leave-one-out cross-validation in a function for an optimizer
+obj <- function(h, frml, data, kern){
+    P_hat <- rep(NA, nrow(data))
+    for(i in 1:nrow(data)){
+        if(!is.na(data$Ws[i])){
+            i_subset <- (1:nrow(data))[-i]
+            ## The i'th observation will not be included in the fit
+            fit <- lm(as.formula(frml), data, subset = i_subset, weights = kern(data$Ws[i], data$Ws, h))
+            ## Now predict for the i'th observation
+            P_hat[i] <- predict(fit, newdata = data[i, ])
+        }
+    }
+    ## The score value
+    val <- rmse(data$P - P_hat)
+    ## Print it
+    print(paste0("h = c(",paste(h,collapse=", "),"), val = ",val))
+    ## Return the score
+    return(val)
+}
+
+
+## Fit a model with Te as input and Ws for local weighting
+frml <- "P ~ Te"
+result <- optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+## Plot and see the function fitted with the optimal bandwidth
+h <- result$minimum
+## Fit a locally weighted model for a sequence
+x = seq(min(X$Te, na.rm=TRUE), max(X$Te, na.rm=TRUE), len=10)
+y = seq(min(X$Ws, na.rm=TRUE), max(X$Ws, na.rm=TRUE), len=10)
+##
+yprd <- outer(x, y, function(x,y){
+    sapply(1:length(x), function(i){
+        fit <- lm(as.formula(frml), data = X, weight = epanechnikov(y[i], X$Ws, h=h))
+        predict(fit, data.frame(Te=x[i], Ws=y[i]))
+    })
+})  
+
+## ---Removed for the PDF report
+
+## 'jet.colors', alternatives see ?rainbow
+#jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan",
+       #              "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+## Use 100 different colors
+#colors <- jet.colors(100)
+## Set the colors for z values
+#color <- colors[(yprd-min(yprd))/max(yprd)*99.5+1]
+## Make a surface with jet colors
+#surface3d(x, y, yprd, color=color, alpha=1)
+## Make a grid surface
+#surface3d(x, y, yprd, front="lines", back="lines")
 
 ```
 
+
+```{r q8_2_3, results = 'hide', echo = FALSE}
+## ----More-------------------------------------------------------
+## Investigate the effect of Te conditional on Ws
+## so how does the coefficient for Te change as a function of Ws?
+
+## Use a local weighted model
+
+## Fit a model with Te as input and Ws for local weighting
+frml <- "P ~ Te + Ws + G"
+result <- optimize(obj, lower = 0.9, upper = 100, frml = frml, data = X, kern = epanechnikov)
+
+## Plot and see the function fitted with the optimal bandwidth
+h <- result$minimum
+
+## Fit a locally weighted model for a sequence
+Ws_seq = seq(min(X$Ws, na.rm=TRUE), max(X$Ws, na.rm=TRUE), len=50)
+##
+Te_KI <- sapply(Ws_seq, function(ws){
+    fit <- lm(as.formula(frml), data = X, weight = epanechnikov(ws, X$Ws, h=h))
+    c(confint(fit)["Te",1], fit$coefficients["Te"], confint(fit)["Te",2])
+})
+
+## Plot the coefficient as a function of the Ws
+plot(Ws_seq, Te_KI[2, ], type = "l", ylim = range(Te_KI))
+lines(Ws_seq, Te_KI[1, ], lty = 2)
+lines(Ws_seq, Te_KI[3, ], lty = 2)
+
+
+
+## ----Use base splines-------------------------------------------
+## Easily!
+frml <- "P ~ 0 + bs(Ws,df=4,intercept=TRUE) + bs(Ws,df=4,intercept=TRUE):Te + G"
+
+## Fit the model
+Ws_seq = seq(min(X$Ws, na.rm=TRUE), max(X$Ws, na.rm=TRUE), len=50)
+##
+fit <- lm(as.formula(frml), data = X)
+
+summary(fit)
+
+## Plot the coefficient as a function of the Ws
+est <- bs(Ws_seq, df=4, intercept=TRUE) %*% fit$coefficients[6:9]
+plot(Ws_seq, est, type = "l")
+
+```
+
+
+How does the coefficient for Te change as a function of Ws?
+
+*As the Wind speed increases, the coefficient for for Te reduces in both cases using the local weighted model and the base splines.*
+
+Can you explain these results based on your knowledge from physics about building
+heat transfer?
+
+*As the wind speed increases there is a higher heat transfer from the building to the air (more cold air is touching the building and "taking away" heat). So, the coefficient decreases in order to increase the heat power for the building.*
 
 \pagebreak
