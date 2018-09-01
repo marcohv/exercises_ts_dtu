@@ -1,3 +1,2 @@
 # exercises_ts_dtu
-Exercises of the Time Series Analysis course at DTU
-adding a line
+Exercises of the Time Series Analysis course at DTU - August 2018
