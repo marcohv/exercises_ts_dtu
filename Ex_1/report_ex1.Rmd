@@ -10,6 +10,7 @@ bibliography: [references.bib, packages.bib]
 ```{r setup_bibliography, include=FALSE}
 # automatically create a bib database for R packages
 rm(list=ls()) # remove all variables in memory
+setwd(".") #set working directory
 
 knitr::write_bib(c(.packages(),  #make a bibliography for the packages
               #packages used that will be cited
@@ -30,8 +31,6 @@ knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
 library(readxl) # to import Excel files
 library(tidyverse) # to use tidy data
 library(splines)
-
-rm(list=ls()) # remove all variables in memory
 ```
 
 # Q1 - Read data and lm in R
@@ -175,22 +174,23 @@ Try to vary the degrees of freedom (df). What happens to the base splines genera
 
 *A higher degree of freedom generates more base splines.*
 
-Try to vary the degree (degree). What happens to the base splines generated?
+Try to vary the degree (degree of the piece-wise polynomials, i.e. polynomials between the knot points). What happens to the base splines generated?
 
-*A higher degree changes the "shape" of the splines. Higher degree make polynomial or "curve" lines.*
+*A higher degree changes the "shape" of the splines. Higher degree of polynomial makes the fit "smoother" and more "curve" lines.*
 
 ```{r q2_df, results = 'hide', echo = FALSE}
 ## ----Degrees of freedom-----------------------------------------
 ## Change degrees of freedom (of the spline function)
 df <- 7
+degree <- 1
 ## Generate the base splines
-x_bs <- bs(x, df = df, intercept = TRUE)[ , ]
+x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
 ## Plot and add the quantiles
 plot_bs(x, x_bs)
 
 ## Change degree (of the piece-wise polynomials, i.e. polynomials between the knot points)
 df <- 7
-degree <- 1
+degree <- 4
 ## Generate the base splines
 x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
 ## Plot
@@ -200,7 +200,7 @@ plot_bs(x, x_bs)
 
 Give the knot points directly (using the knots argument). Give the knots as the quantiles of x, what happens when degree = 1 and what happens when degree = 3? 
 
-*Giving the knots directly we can change manually the breaking points. When defining the quantiles, we assign the knots depending on the amount of data. The degree changes the shape of the splines.*
+*Giving the knots directly we can change manually the breaking points of the splines. When defining the quantiles, we assign the possition of the knots depending on the amount of data. The degree changes the shape of the splines and how they adapt to the data between the knots.*
 
 ```{r q2_knot, results = 'hide', echo = FALSE}
 ## Specify knot points
@@ -212,8 +212,8 @@ knots
 
 ## Generate the base splines of degree = 1 with the knots as the quantiles
 ##
-## Note that the inner knots are given by the "knots" argument, the
-##   boundary knots are min(x) and max(x) (see ?bs "Boundary.knots")
+## Note that the inner knots are given by the "knots" argument, the boundary knots are min(x) and max(x) (see ?bs "Boundary.knots")
+
 x_bs <- bs(x, knots = knots[2:(length(knots)-1)], degree = 1, intercept = TRUE)[ , ]
 ## Plot
 plot_bs(x, x_bs)
@@ -240,7 +240,7 @@ x = c(seq(-1,0,len=200), seq(0,1,len=100), seq(1,2,len=500))
 
 ## Set df and degree
 df <- 7
-degree <- 1
+degree <- 2
 
 ## Generate the base splines of degree with the quantile knots
 x_bs <- bs(x, df = df, degree = degree, intercept = TRUE)[ , ]
@@ -251,11 +251,12 @@ abline(v = knots)
 \pagebreak
 
 # Q3 - Base splines model
-Now we want to calculate the base splines as a function of the external temperature. And then use them as input to a linear regression model. In this way, it becomes a non-linear model The characteristics of *f()* depend on how the base splines are generated, so it does not have any direct parameters, therefore such a model is called a non-parametric model.
+Now we want to calculate the base splines as a function of the external temperature and then use them as input to a linear regression model. In this way, it becomes a non-linear model.  
+The characteristics of *f()* depend on how the base splines are generated, so it does not have any direct parameters, therefore such a model is called a non-parametric model.
 
 Try to fit a model, is it linear or how is it shaped?
 
-*The fitted model is not linear, but a polynomial fit. However there are some fit problems at the extremes.*
+*The fitted model is not linear, but a polynomial fit. However there are some fit problems at the extremes due to boundary bias.*
 
 ```{r q3_read, results = 'hide', echo = FALSE}
 ## Load the data
@@ -276,14 +277,13 @@ lines(xseq, predict(fit, newdata = data.frame(Te = xseq)))
 ```
 Try to change the degrees of freedom (df), what happens?
 
-*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a df=5 there is a good fit without overfitting.*
+*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a* **df=5** *there is a good fit without overfitting.*
 
 ```{r q3_df, results = 'hide', echo = FALSE}
-## ----Degrees of freedom (df)-----------------------------------
+## ----Degrees of freedom (df)
+
 ## Build a model using base splines
-##
-## What should the df be?
-##
+
 fit <- lm(P ~ bs(Te, df=5), X)
 ## We get a coefficient for each base spline
 summary(fit)
@@ -299,6 +299,7 @@ lines(xseq, predict(fit, newdata=data.frame(Te=xseq)))
 ##   using same number of parameters in the model
 fit <- lm(P ~ bs(Te, df=3), X)
 summary(fit)
+
 ## Plot the relation between external temperature and heat load
 plot(X$Te, X$P)
 ## We need to use predict to see the estimated function
@@ -320,7 +321,7 @@ Try to calculate and plot the triangular kernel and play around with the paramet
 
 How do they affect the shape of the kernel?
 
-*Changing the x_i moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
+*Changing the $x_i$ moves the center or peak of the kernel. Adjusting the h defines the width of the base to $\pm h$ steps from $x_i$.*
 
 ```{r q4_tri, results = 'hide', echo = FALSE}
 ## Plot a kernel
@@ -350,7 +351,7 @@ points(x, tri(x_i=0.3, x=x, h=0.1), col = 2)
 Try to calculate and plot the Epanechnikov kernel and play around with the parameters.
 How do they affect the shape of the kernel?
 
-*Similarly to the triangular kernel, changing the x_i in the Epanechnikov kernel function moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
+*Similarly to the triangular kernel, changing the $x_i$ in the Epanechnikov kernel function moves the center or peak of the kernel. Adjusting the h defines the width of the base.*
 
 ```{r q4_epanech, results = 'hide', echo = FALSE}
 
@@ -378,10 +379,6 @@ points(x, epanechnikov(x_i=0.1, x=x, h=0.3), col = 2)
 
 # Q5 - Locally weighted model with a kernel function
 
-Fit a locally weighted model for a single
-point and predict the heat load.
-Fit for a sequence and make the plot of the function. Try to change the bandwidth h. 
-
 ```{r q5_ini, results = 'hide', echo = FALSE}
 
 ## Remove all in memory
@@ -399,6 +396,8 @@ tri <- function(x_i, x, h){
 
 ```
 
+Fit a locally weighted model for a singlepoint and predict the heat load.
+
 ```{r q5_local_w, results = 'hide', echo = FALSE}
 ## Fit a locally weighted model for some point 
 x_i <- 5
@@ -407,6 +406,7 @@ x_i <- 5
 fit <- lm(P ~ Te, data = X, weight = tri(x_i, X$Te, h=10))
 predict(fit, newdata = data.frame(Te=x_i))
 ```
+Fit for a sequence and make the plot of the function. Try to change the bandwidth h. 
 ```{r q5_bandwidth, echo= FALSE, message=FALSE, warning=FALSE, results='hide'}
 
 ## Fit a locally weighted model for a sequence
