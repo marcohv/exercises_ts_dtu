@@ -277,7 +277,11 @@ lines(xseq, predict(fit, newdata = data.frame(Te = xseq)))
 ```
 Try to change the degrees of freedom (df), what happens?
 
+<<<<<<< HEAD
 *When increasing the degrees of freedom the line fits better in the extreme temperatures. With a* **df=5** *there is a good fit in the extremes without overfitting.*
+=======
+*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a* **df=5** *there is a good fit without overfitting.*
+>>>>>>> 0063d922829550f9d1b71223e3e577f56fc6a4ec
 
 ```{r q3_df, results = 'hide', echo = FALSE}
 ## ----Degrees of freedom (df)
