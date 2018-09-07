@@ -31,8 +31,6 @@ library(readxl) # to import Excel files
 library(tidyverse) # to use tidy data
 library(ctsmr)
 
-## Init by deleting all variables and functions
-rm(list=ls())
 ## Set the working directory
 setwd(".")
 
@@ -145,7 +143,7 @@ model$setParameter( e11 = c(init=-1  ,lb=-50   ,ub=10 ) )
 
 Estimate the parameters in the simple model Ti in Equation (1) and see the estimated values with summary(fit). Is the estimation successful (i.e. does the minimization of the negative loglikelihood converge?  
 
-\textcolor{blue}{The estimate is not successful since one of the estimates (Ria) is close to the lower boudnary of the model.}
+\textcolor{blue}{The estimate is not successful since one of the estimates (Ria) is close to the lower boundary of the model. Also the estimate of Aw is close the its lower boudnary.}
 ```{r q1_ctsm_est, echo=FALSE, warning=FALSE, results='hide'}
 ## Run the parameter estimation
 fit <- model$estimate(X)
