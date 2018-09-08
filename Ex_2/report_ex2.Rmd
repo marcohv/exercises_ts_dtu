@@ -1,4 +1,8 @@
 ---
+header-includes: #allows you to add in your own Latex packages
+- \usepackage{float} #use the 'float' package
+- \floatplacement{figure}{H} #make every figure with caption = H
+
 title: \Large Excercise 2 - Grey-box models and model selection
 author: "Marco Hernandez Velasco"
 date: "August 2018"
@@ -22,7 +26,9 @@ knitr::write_bib(c(.packages(),  #make a bibliography for the packages
 #define other general chunk settings
 knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
                       fig.height = 4, #figures height for all chunks
-                      fig.align = "center") 
+                      fig.width = 5, #figures width for all chunks
+                      fig.align = "center", #figure position
+                      fig.pos = 'H') #tell Latex to hold figures in thier position instead of floating (you still need the 'float' package in the yaml preamble)
 ```
 @* `r #includes all references in file, even those not mentioned in the text `
 
@@ -108,9 +114,9 @@ model$states
 Now we can add a system equation (and thereby also a state variable) with the addSystem() function.
 
   * Note that the deterministic part of the SDE is multiplied with dt.
-  * Note that the stochastic part is multiplied with system noise process dw1. 
-  * Note that the variance of the system noise is exp(p11), where exp() is the exponential function and p11 is the parameter. 
-  * Since the variance is strictly positive, but can be very close to zero, it is a good idea to take exp() of the parameter, since then p11 can go from -Inf to Inf but the exponential goes from 0 to Inf, with good resolution towards 0.
+  * Note that the stochastic part is multiplied with system noise process **dw1**. 
+  * Note that the variance of the system noise is **exp(p11)**, where *exp()* is the exponential function and *p11* is the parameter. 
+  * Since the variance is strictly positive, but can be very close to zero, it is a good idea to take *exp()* of the parameter, since then *p11* can go from -Inf to Inf but the exponential goes from 0 to Inf, with good resolution towards 0.
 
 ```{r q1_eq, echo=TRUE, warning=FALSE, results='hide'}
 model$addSystem(dTi ~ ( 1/(Ci*Ria)*(Ta-Ti) + Aw/Ci*Ps + 1/Ci*Ph )*dt + exp(p11)*dw1)
@@ -143,7 +149,7 @@ model$setParameter( e11 = c(init=-1  ,lb=-50   ,ub=10 ) )
 
 Estimate the parameters in the simple model Ti in Equation (1) and see the estimated values with summary(fit). Is the estimation successful (i.e. does the minimization of the negative loglikelihood converge?  
 
-\textcolor{blue}{The estimate is not successful since one of the estimates (Ria) is close to the lower boundary of the model. Also the estimate of Aw is close the its lower boudnary.}
+\textcolor{blue}{The estimate is not successful since one of the estimates (Ria) is close to the lower boundary of the model. Also the estimate of Aw is close the its lower boundary.}
 ```{r q1_ctsm_est, echo=FALSE, warning=FALSE, results='hide'}
 ## Run the parameter estimation
 fit <- model$estimate(X)
@@ -160,10 +166,9 @@ Actually, the initial value and the boundary for one of the parameters are poorl
 ## If any of the parameter estimates are close to the lower or upper bound then "dF/dPar" is significant compered to "dPen/dPar"
 summary(fit, extended = TRUE)
 ```
-Correct one of the boundaries and re-estimate until the partial derivatives are
-all very small. Which boundary was not set appropriately?  
+If the value of *dPen/dPar* is significant compared to the value of *dF/dPar* for a particular parameter it indicates that a boundary should be expanded for the parameter.Correct one of the boundaries and re-estimate until the partial derivatives are all very small. Which boundary was not set appropriately?  
 
-\textcolor{blue}{The boundary of Ria needed to be corrected since the estimate was close to it.}
+\textcolor{blue}{The lower boundary of Ria needs to be corrected since the estimate was close to it. Also for Aw the estimate value is very close to its lower boundary.}
 
 ```{r q1_ctsm_mod2, echo = FALSE, warning=FALSE, results='hide'}
 #same model again to correct the boundaries
@@ -205,9 +210,9 @@ fit2 <- model2$estimate(X)
 ## See the summary of the estimation
 summary(fit2, extended = TRUE)
 ```
-The one-step predictions (residuals) are estimates of the system noise (i.e. the realized values of the incremental dw of the Wiener process) added together with the observation noise. The assumptions are that the one-step predictions are white noise. Validate if this assumption is fulfilled, by plotting the autocorrelation function and the accumulated periodogram for the residuals. Is the model model suitable, i.e. does it describe the heat dynamics sufficiently?  
+The one-step predictions (residuals) are estimates of the system noise (i.e. the realized values of the incremental *dw* of the Wiener process) added together with the observation noise. The assumptions are that the one-step predictions are white noise. Validate if this assumption is fulfilled, by plotting the autocorrelation function and the accumulated periodogram for the residuals. Is the model model suitable, i.e. does it describe the heat dynamics sufficiently?  
 
-\textcolor{blue}{The model is not sufficient since the residuals seem to be autocorrelated and there is information in the residuals that the model is not capturing. The periodogram should have all "frequencies" represented equally (horizontal line) but they are not. Also the accumulated periodogram should show equal distribution of "frequency" (diagonal line) and the residuls are clearly outside the blue lines (confidence intervals).}
+\textcolor{blue}{The model is not sufficient since the residuals seem to be autocorrelated and there is information in the residuals that the model is not capturing. The periodogram should have all "frequencies" represented equally (horizontal lineo of "white noise") but they are not. Also the accumulated periodogram should show equal distribution of "frequencies" (fit in the diagonal line) and the residuls are clearly outside the blue lines (confidence intervals).}
 ```{r q1_ctsm_mod2_residuals, echo=FALSE, warning=FALSE, eval = 'hide'}
 ## Calculate the one-step predictions of the state (i.e. the residuals)
 tmp2 <- predict(fit2)[[1]]
@@ -226,14 +231,6 @@ spec.pgram(X$residuals)
 cpgram(X$residuals)
 
 ```
-It is possible to gain some information about what is missing in the
-model, with time series plots of the residuals and the inputs.
-Are there some systematic patterns in the residuals?  
-
-\textcolor{blue}{The residuals show a systematic pattern, specially after the second day. They are not behaving as white noise.}
-
-If yes, do they seem to be related to the inputs? To any specific events in the inputs?  
-\textcolor{blue}{There seems to be a systematic offset in the residuals, specially when the heater is off. We could assume that there is need for another state in order to take into account the thermal dynamics of air (fast changing) separately from the thermal changes of the walls or other objects in the building (slow changing).}
 
 ```{r q1_time_series, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Time series plots of the inputs and residuals
@@ -273,6 +270,13 @@ par(def.par)
 layout(1)
 
 ```
+It is possible to gain some information about what is missing in the model, with time series plots of the residuals and the inputs.
+Are there some systematic patterns in the residuals?  
+
+\textcolor{blue}{The residuals show a systematic pattern, specially after the second day. They are not behaving as white noise. There is a clear pattern that is affected when the heater is turned on/off and the model "re-adjusts" so the residuals change}
+
+If yes, do they seem to be related to the inputs? To any specific events in the inputs?  
+\textcolor{blue}{There seems to be a systematic offset in the residuals, specially when the heater is off. We could assume that there is need for another state in order to take into account the thermal dynamics of air (fast changing) separately from the thermal changes of the walls or other objects in the building (slow changing).}
 \pagebreak
 
 # Q2 - Extend the simplest model
@@ -296,6 +300,10 @@ X <- read.csv("inputPRBS1.csv",sep=";",header=TRUE)
 X$timedate <- asP("2009-02-05 14:26:00)") + X$t * 3600
 ```
 
+```{r q2_ti_img, echo=FALSE, fig.cap= "RC-network of the most simple model Ti", out.width = '100%'}
+knitr::include_graphics("Ti.png")
+```
+
 ```{r q2_ti, echo=FALSE, warning=FALSE, results = 'hide'}
 ## First go and open the file "functions/Ti.R". The model Ti is defined in there.
 ## Run the parameter optimization for the first model
@@ -303,9 +311,15 @@ fitTi <- Ti(X)
 ## Analyze the results (If you want in RStudio not to have external plot windows, change "newdev", maybe the default value in "functions/analyzeFit.R")
 analyzeFit(fitTi, newdev = FALSE)
 ```
-\pagebreak
 
-**RC-network of the most simple model extended with a state in the building envelope TiTe**
+
+## TiTe  
+
+The most simple model extended with a state in the building envelope TiTe.
+
+```{r q2_tite_img, echo=FALSE, fig.cap= "RC-network of the most simple model extended with a state in the building envelope TiTe", out.width = '100%'}
+knitr::include_graphics("TiTe.png")
+```
 
 ```{r q2_tite, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Run the parameter optimization
@@ -313,9 +327,14 @@ fitTiTe <- TiTe(X)
 ## Analyze the results
 analyzeFit(fitTiTe, newdev = FALSE)
 ```
-\pagebreak
 
-**RC-network of the most simple model extended with a state in the heater TiTh.**
+## TiTh  
+
+The most simple model extended with a state in the heater TiTh.  
+
+```{r q2_tith_img, echo=FALSE, fig.cap= "RC-network of the most simple model extended with a state in the heater TiTh.", out.width = '100%'}
+knitr::include_graphics("TiTh.png")
+```
 
 ```{r q2_tith, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Run the parameter optimization
@@ -323,9 +342,14 @@ fitTiTh <- TiTh(X)
 ## Analyze the results
 analyzeFit(fitTiTh, newdev = FALSE)
 ```
-\pagebreak
 
-**RC-network of the most simple model extended with a state in which the solar radiation enters TiTm.**
+## TiTm  
+
+The most simple model extended with a state in which the solar radiation enters TiTm.  
+
+```{r q2_titm_img, echo=FALSE, fig.cap= "RC-network of the most simple model extended with a state in which the solar radiation enters TiTm.", out.width = '100%'}
+knitr::include_graphics("TiTm.png")
+```
 
 ```{r q2_titm, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Run the parameter optimization
@@ -333,9 +357,15 @@ fitTiTm <- TiTm(X)
 ## Analyze the results
 analyzeFit(fitTiTm, newdev = FALSE)
 ```
-\pagebreak
 
-**RC-network of the most simple model extended with a state in the sensor TiTs.**
+
+##TiTs  
+
+The most simple model extended with a state in the sensor TiTs.  
+
+```{r q2_tits_img, echo=FALSE, fig.cap= "RC-network of the most simple model extended with a state in the sensor TiTs.", out.width = '100%'}
+knitr::include_graphics("TiTs.png")
+```
 
 ```{r q2_tits, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Run the parameter optimization
@@ -345,7 +375,7 @@ analyzeFit(fitTiTs, newdev = FALSE)
 ```
 Are the extended models improved regarding the description of the dynamics (hint, analyse the residuals)?
 
-\textcolor{blue}{The models are improvements to the simplest model, at least based on the residuals analysis, specially TiTm. Although it is not optimal yet. It is still needed to optimize based on the likelihood and number of parameters in the model.}  
+\textcolor{blue}{The models are improvements to the simplest model, at least based on the residuals analysis, specially **TiTm**. Although it is not optimal yet. It is still needed to optimize based on the likelihood and number of parameters in the model.}  
 
 # Q3 - Selection of model
 
@@ -392,9 +422,13 @@ likRatioTest(fitTiTh, fitTi)
 \textcolor{blue}{The p-value is very small indicating that the difference between the models is significant and that the improvement from one model to the other is very unlikely by chance.} 
 \pagebreak
 
-## Forward model selection
+Forward model selection: take the selected model and extend it again once more, see the functions with third order models (i.e. models with 3 states).   
 
-**TiThTe**
+## TiThTe  
+
+```{r q3_tithte_img, echo=FALSE, fig.cap= "RC-diagram of TiTeTh.", out.width = '100%'}
+knitr::include_graphics("TiTeTh.png")
+```
 
 ```{r q3_tithte, echo=FALSE, warning=FALSE, results = 'hide'}
 
@@ -404,9 +438,13 @@ fitTiThTe <- TiThTe(X)
 ## Analyze the results
 analyzeFit(fitTiThTe, newdev = FALSE)
 ```
-\pagebreak
 
-**TiThTs**
+
+## TiThTs  
+
+```{r q3_tithts_img, echo=FALSE, fig.cap= "RC-diagram of TiThTs.", out.width = '100%'}
+knitr::include_graphics("TiThTs.png")
+```
 
 ```{r q3_tithts, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Fit different models extended from TiTh 
@@ -414,9 +452,12 @@ fitTiThTs <- TiThTs(X)
 ## Analyze the results
 analyzeFit(fitTiThTs, newdev = FALSE)
 ```
-\pagebreak
 
-**TiThTm**
+## TiThTm
+
+```{r q3_tithtm_img, echo=FALSE, fig.cap= "RC-diagram of TiThTm.", out.width = '100%'}
+knitr::include_graphics("TiThTm.png")
+```
 
 ```{r q3_tithtm, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Fit different models extended from TiTh
@@ -429,12 +470,20 @@ Which one of the three extended models should we select?
 
 \textcolor{blue}{From the residuals graphs, the TiThTe model seems to be fitting the data better.} 
 
-```{r q3_fwd_sel_log, echo=FALSE, warning=FALSE, results = 'hide'}
+```{r q3_selec_log, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Take the one with the highest likelihood, as in previous step.
 fitTiThTe$loglik
 fitTiThTs$loglik
 fitTiThTm$loglik
+```
+From this point the selection and extension procedure should be continued (i.e. models with 4+ states). until no significant extension can be found, however this is beyond the scope of the exercise.
 
+## TiTeThTs  
+
+```{r q3_TiTeThTs_img, echo=FALSE, fig.cap= "RC-diagram of TiTeThTs", out.width = '100%'}
+knitr::include_graphics("TiTeThTs.png")
+```
+```{r q3_fwd, echo=FALSE, warning=FALSE, results = 'hide'}
 ## Check that the extension has a significant increase in the loglikelihood function
 likRatioTest(fitTiThTe, fitTiTh)
 
@@ -443,8 +492,7 @@ likRatioTest(fitTiThTe, fitTiTh)
 
 From here we should keep on extending the model, but for now no larger linear models are implemented here. From this points it is also likely that extensions to linear models compensate for non-linear or time-dependent effects.
 
-See the article *"Identifying suitable models for heat dynamics"*, it is included in the .zip file, the performance (i.e. ACF(e_k) etc.) '
-doesn't really change for models larger than TiThTe compared to the larger tested linear model.  Hence we should rather look in residuals for non-linear or transformations of the inputs in order to model the effects which are not described well in the current model.
+See the article *"Identifying suitable models for heat dynamics"*, it is included in the .zip file, the performance (i.e. ACF(e_k) etc.) doesn't really change for models larger than TiThTe compared to the larger tested linear model.  Hence we should rather look in residuals for non-linear or transformations of the inputs in order to model the effects which are not described well in the current model.
 
 ```{r q3_hlc, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 
@@ -481,7 +529,7 @@ quantile(HLCsim,probs=c(0.025,0.975))*1000
 
 # Q4 - Pseudo Random Sequence Signals
 
-This part deals with Pseudo Random Sequence Signals. The function prbs() is an implementation of the n-stage feedback registers in the paper (see the function definition in "r/functions/prbs.R). 
+This part deals with Pseudo Random Sequence Signals. The function **prbs()** is an implementation of the n-stage feedback registers in the paper (see the function definition in "r/functions/prbs.R). 
 
 ```{r q4_ini, results = 'hide', echo = FALSE}
 ## Set the working directory
@@ -539,9 +587,9 @@ Which of the other signals are highly dependent on the PRBS signal?
 ## Generate a PRBS signal
 
 Use the function defined in the file "functions/prbs.R", which generates a PRBS signal:
-    + n is the length of the register
-    + initReg just needs to be some initial value of 1,2,... it is the initial value of the registers and therefore only determines the start of the cycle.
-    + lambda is the length of the smallest period in which the signal can change, given in samples
+    + **n** is the length of the register
+    + **initReg** just needs to be some initial value of 1,2,... it is the initial value of the registers and therefore only determines the start of the cycle.
+    + **lambda** is the length of the smallest period in which the signal can change, given in samples
 
 ```{r q4_prbs, echo=FALSE, warning=FALSE, results = 'hide'}
 x <- prbs(n=6)
