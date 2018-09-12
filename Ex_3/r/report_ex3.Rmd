@@ -295,19 +295,24 @@ Find the azimuth angles (in radians) that corresponds to the sunrise and sunset,
 ```{r q2_angles, echo=FALSE, warning=FALSE, results='hide'}
 ## Inset the boundary angles (in radians) below.
 library(dplyr)
-X %>% mutate(sunAz = round(sunAzimuth, 2),
-             sunEle = round(sunElevation, 2),
-             crossX = diff(sign(sunEle))) %>%
-      select(sunAz, sunEle, crossX) %>%
-      filter(sunEle == 0)
 
-azumith.bound <- c(1.03, 5.21)      
+a <- X %>% select(sunAzimuth, sunElevation) %>%  #select relevant colums
+      mutate(sunAz = round(sunAzimuth,2), #round the azimuth
+              #give the sign of the elevation
+              #compare to previous/lagged sign, get absolute value
+              #when there is a change it will be = 0
+             sign_change = sign(sunElevation) + lag(sign(sunElevation))) %>%
+      filter(sign_change == 0) %>%  #find the rows where it changes
+      summarise(min_bound = min(sunAz), max_bound = max(sunAz)) #summarise to the min, max
+
+#convert the above data frame to a vector of 2 values
+azumith.bound<- as.vector(t(a)) #t() transposes the matrix to do it by columns
+
+#is the same as:#azumith.bound <- c(1.05, 5.22)      
 
 ```
 
 ```{r q2_gA_splines, echo=FALSE, warning=FALSE, results='hide'}
-
-
 ## Create base splines
 Xbs <- as.data.frame(bs(X$sunAzimuth,
                         df=4,
