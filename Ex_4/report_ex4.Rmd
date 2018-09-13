@@ -278,7 +278,7 @@ itest <- which(per("2010-12-01",X$t,"2011-01-01"))
 ```
 
 ```{r q3_lowpass, echo=FALSE, warning=FALSE, results='hide'}
-##----------------------------------------------------------------
+
 ## We know that there are dynamics from Ta to Ph
 
 ## The low-pass filter function is defined in "functions/lp_vector.R"
@@ -370,7 +370,7 @@ obj <- function(prm, frml, data, itrain, return_fit = FALSE) {
 ```
 In order to tune the low-pass filter coefficients (one for the ambient temperature and one for the solar radiation) apply an optimizer to minimize the RMSE with leaveone-out cross-validation on the test set.
 
-```{r q3_lowpass_tune, echo=FALSE, warning=FALSE, results='hide'}
+```{r q3_lowpass_tune2, echo=FALSE, warning=FALSE, results='hide'}
 
 ## It can be used in optim
 result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml = frml, data = X[itrain, ], method = "L-BFGS-B", itrain = itrain)
