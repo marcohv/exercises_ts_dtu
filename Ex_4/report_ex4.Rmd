@@ -33,11 +33,17 @@ knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
 @* `r #includes all references in file, even those not mentioned in the text `
 
 ```{r initialize, message = FALSE, echo = FALSE}
+
+## Packages used
 library(readxl) # to import Excel files
 library(tidyverse) # to use tidy data
 library(ctsmr) #for doing ctsm analysis
 library(splines) #for base splines models
 library(parallel) #In order to use all cores on the cpu
+#install.packages("quantreg")
+#install.packages("verification")
+require(verification)
+require(quantreg)
 
 ## Init by deleting all variables and functions
 rm(list=ls())
@@ -798,7 +804,7 @@ lines(X$t[itest], fit$Theta[itest,3], col = 3)
 
 # Q6 - Solar forecasting
 
-Now we can "easily" find a model which is useful for forecasting solar, e.g. the power generation on a PV panel. In the exercise, we will actually just use the observed global radiation as the solar power, hence this is somewhat a little bit simplified case. However, these observations contain quite a few deviations: shadowing in the late morning hours from a chimney, some tilt of the sensor and also some saturation.
+Now we can "easily" find a model which is useful for forecasting solar, e.g. the power generation on a PV panel. In this exercise, we will actually just use the observed global radiation as the solar power, hence this is somewhat a little bit simplified case. However, these observations contain quite a few deviations: **shadowing in the late morning hours from a chimney, some tilt of the sensor and also some saturation.**
 
 ```{r q6_ini, echo=FALSE, warning=FALSE, results='hide'}
 
@@ -812,7 +818,8 @@ sapply(dir("functions",full.names=TRUE), source)
 Data <- readRDS("data_soenderborg.RDS")
 ```
 
-Simple linear regression model is fitted:
+### Simple linear regression model is fitted
+
 ```{r q6_linear_reg, echo=FALSE, warning=FALSE, results='hide'}
 ## Make a data.frame with synced observations and NWPs
 k <- 24
@@ -848,11 +855,15 @@ rmse(X$residuals_lm[itest])
 
 plotmulti(X[itrain[1:300], ], c("Ps|G","residuals_lm"))
 ```
-Do the forecasts seem to be good?  
-*The forecast seems to match in some parts but it is not good.*  
+  * Do the forecasts seem to be good?
+  
+*The forecast seems to match in some parts but it is not really good.*  
 
-Can you spot any systematic patterns?  
+  * Can you spot any systematic patterns?
+
 *There are some periods (several days in a row) where the prediction is above the observed value, and some days where it is the other way around.*
+
+**Explore the residuals in the next part:**
 
 ```{r q6_residuals, echo=FALSE, warning=FALSE, results='hide'}
 ## Explore the residuals
@@ -869,18 +880,23 @@ points(Xafternoon$G, Xafternoon$Ps, col = 2)
 abline(lm(Ps ~ G, Xafternoon), col = 2)
 ```
 
-Do you find any systematic patterns?
+  * Do you find any systematic patterns?
+  
 *Yes, specially in the middle of the day the spread is much bigger. In the mornings the residuals are mainly below 0, while in the afternoon they are greater than 0.*
 
-What can cause the found differences in the relation between NWP global radiation (Gnwp) and the observed solar power (i.e. observed global radiation) Ps?
-*There can be some shadding that appears in the morning, differences with the orientations. Also *
+  * What can cause the found differences in the relation between NWP global radiation ($G_{nwp}$) and the observed solar power (i.e. observed global radiation) $P_s$?
 
-Now, define a model the relation between the solar power and the global radiation NWP is conditional on the time of day
+*These differences could be causd by the shadding of the chimmeny that appears in the late morning, differences with the orientations/tilt of the sensor.*
+
+Now, define a model the relation between the solar power and the global radiation NWP is conditional on the time of day. Fit it, using base splines and lm() and rls(), and finally with a kernel model.
+
+### Base splines
 
 ```{r q6_splines, echo=FALSE, warning=FALSE, results='hide'}
 ## Use a base spline model with lm
 ## Use the time of day to calculate base splines and multiply with G
 ##   in this way the function between Ps and G can change conditional on time of day
+
 fit_bs_lm <- lm(Ps ~ bs(tday, df=10) * G, X[itrain, ])
 
 X$residuals_bs_lm <- X$Ps - predict(fit_bs_lm, X)
@@ -898,6 +914,7 @@ lines(tmp$t, tmp$Ps - tmp$residuals_lm, col=2)
 lines(tmp$t, tmp$Ps - tmp$residuals_bs_lm, col=3)
 ```
 
+### Base spline model with rls
 
 ```{r q6_splines_rls, echo=FALSE, warning=FALSE, results='hide'}
 #Use a base spline model with rls
@@ -936,10 +953,13 @@ lines(tmp$Ps - tmp$residuals_bs_lm, col = 3)
 rmse(X$residuals_bs_rls[itest])
 rmse(X$residuals_bs_lm[itest])
 ```
+
+### Kernel model
 ```{r q6_kernel, echo=FALSE, warning=FALSE, results='hide'}
 ## What about a kernel model?
 
 ## Wrap the leave-one-out in a function which returns the score
+
 obj <- function(h, frml, data, k = k, ieval = 1:nrow(data), n_min=10, return_yhat = FALSE){
     ## Keep the output in yhat, only for ieval points
     yhat <- sapply(ieval, function(i){
@@ -976,8 +996,12 @@ result <- optimize(obj, lower = 0.9, upper = 4, frml = frml, data = X[itrain, ],
 
 result
 
-Ps_hat <- obj(h=result$minimum, frml, X, k, return_yhat = TRUE)
+Ps_hat <- obj(h=result$minimum, 
+              frml, X, k, 
+              return_yhat = TRUE)
+
 X$residuals_kern <- X$Ps - Ps_hat
+
 boxplot(X$residuals_kern ~ X$tday, ylim=c(-400,400))
 ```
 
@@ -1003,10 +1027,283 @@ RMSE <- c(rmse(X$residuals_kern[itest]),
 data.frame(Model, RMSE)
 
 ```
-How can you decide which model is better?  
+  * How can you decide which model is better?
+  
 *Based on the RMSE and the plots, "Base spline and RLS" is the model that predicts better the solar power.*
 
-Do you find differences between the prediction performance of the models?  
-*Yes, specially between when only the Linear Model (lm) is used because it lacks the ability to adapt the variance with time*
+  * Do you find differences between the prediction performance of the models?
+  
+*Yes, specially when applying only the Linear Model (lm)  because it lacks the ability to adapt the variance with time*
+
+\pagebreak
+
+# Q7 - Wind forecasting
+
+These are not real wind power measurements. The "wind power" Pw, which is used, is actually the observed wind speed put through a simple power curve function. Hence this is a "simplified" wind power, which has the basic properties of a "real" wind power – remember "real" wind power signals are potentially quite different depending on the wind turbine and wind farm properties, and surroundings etc. Hence, the signals used holds the basic properties of a wind power measurement.
+
+```{r q7_ini, echo=FALSE, warning=FALSE, results='hide'}
+
+## Init by deleting all variables and functions
+rm(list=ls())
+
+## Source functions
+sapply(dir("functions",full.names=TRUE), source)
+
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+```
+
+```{r q7_dataframe, echo=FALSE, warning=FALSE, results='hide'}
+## Make a data.frame with synced observations and NWPs
+k <- 24
+X <- data.frame(t=Data$t, Pw=Data$Pw, Ws=lag_vector(Data$Wsnwp[ ,pst("k",k)],k))
+
+## Divide into a training set and a test set
+## Just keep the indexes
+tstart <- "2010-12-01"
+tstart_train <- "2011-03-01"
+tend <- "2011-04-01"
+X <- X[per(tstart,X$t,tend), ]
+itrain <- which(per(tstart,X$t,tstart_train))
+itest <- which(per(tstart_train,X$t,tend))
+```
+### Linear regression model
+```{r q7_lm, echo=FALSE, warning=FALSE, results='hide'}
+
+## Plot
+plotmulti(X, c("Pw|Ws"))
+
+## See the scatter plot
+plot(X$Ws, X$Pw)
+
+## Fit a linear regression model
+fit <- lm(Pw ~ Ws, X[itrain, ])
+abline(fit)
+
+## RMSE on test set
+X$Pw_hat_lm <- predict(fit, X)
+
+## Chop below 0
+X$Pw_hat_lm[X$Pw_hat_lm < 0] <- 0
+X$residuals_lm <- X$Pw - X$Pw_hat_lm
+
+## The score
+rmse_lm <- rmse(X$residuals_lm[itest])
+
+# plot forecats
+plotmulti(X[itest, ], c("Pw$|Pw_hat_lm"))
+```
+Look at the scatter plot of the wind power $P_w$ vs. wind speed NWP $W_s$ `(plot(X$Ws, X$Pw))` with the linear model fit `(abline(fit))`. 
+  * Can you conclude that a linear model is suitable?
+  
+*No, a linear model is definitively not suitable in this case since the data doesn't follow a linear path (looks more like a logistic regression)*
+
+### Spline model 
+
+Making the model non-linear in the wind speed
+```{r q7_spline, echo=FALSE, warning=FALSE, results='hide'}
+## Use a spline model to make it non-linear in the wind speed
+fit_bslm <- lm(Pw ~ bs(Ws, df=8), X[itrain, ])
+X$Pw_hat_bslm <- predict(fit_bslm, X)
+X$residuals_bslm <- X$Pw - X$Pw_hat_bslm
+
+## Improvements?
+rmse_bslm <- rmse(X$residuals_bslm[itest])
+
+## See the forecasts
+plotmulti(X[itest, ], c("Pw$|Pw_hat"))
+```
+  * Are the forecast improving when you apply a base spline model taking into account a non-linear functional relationship between $W_s$ and $P_w$?
+
+*Yes, based on the graph of the forecasts and the actual wind power ($P_W$), the base spline model has a better fit than the linear regression model. Also, comparing the RMSE of `r round(rmse_lm, 3)` for the linear regression model to `r round(rmse_bslm, 3)`, there was an imporvement by uisng a non-linear relationship.*
+
+### Base spline model with rls
+```{r q7_spline_rls, echo=FALSE, warning=FALSE, results='hide'}
+## Base spline model with rls
+obj <- function(prm, frml, data, k, ieval = 1:nrow(data)) {
+    print(prm)
+    ## Apply a low-pass filter on the input
+    lambda <- prm[1]
+    fit <- rls(as.formula(frml), lambda, data, k)
+    ## Evaluate only on the ieval rows
+    print(score <- rmse(fit$residuals[ieval]))
+    return(score)
+}
+
+frml <- "Pw ~ bs(Ws, df=8)"
+
+## To have a "burn-in" period, then set ieval (here remove the first 14 days
+ieval <- itrain[-1:-(24*14)]
+result <- optimize(obj, lower = 0.95, upper = 1, frml = frml, data = X[itrain, ], k = k, ieval = ieval)
+lambda_rls <- result$minimum
+
+## Calculate the forecasts
+fit <- rls(as.formula(frml), lambda = lambda_rls, X, k)
+X$residuals_bsrls <- fit$residuals
+
+## Plot
+tmp <- X[itest, ]
+plot(tmp$Pw, type = "l")
+lines(tmp$Pw - tmp$residuals_bsrls, col = 2)
+lines(tmp$Pw - tmp$residuals_bslm, col = 3)
+
+## Improvements
+rmse_bsrls <- rmse(X$residuals_bsrls[itest])
+
+```
+  * Do we achieve improvements with RLS over LM?
+
+*There was no improvement when comparing the RMSE of `r round(rmse_bslm, 3)` agaisnt the RMSE of the rls model `r round(rmse_bsrls, 3)`*
+
+  * If not, can you give some explanation? (i.e. somehow weird, since RLS with $\lambda = 1$ give the same result as LM, right!?)...what was the optimal $\lambda$ found using the training set?
+
+*The lack of improvements could come because the minimum lambda encountered thorugh the optimisation (`r round(lambda_rls, 3)` is very close to 1 which gives the same results to Lm, so no big improvement is achieved.*
+
+### Kernel model
+
+```{r q7_kernel, echo=FALSE, warning=FALSE, results='hide'}
+## Use this somewhat generalized function (see functions/obj_kernel.R)
+obj_kernel
+
+## Define model
+frml <- "Pw ~ Ws"
+h <- c(Ws=3)
+ieval <- itrain[-1:-(24*14)]
+obj_kernel(h, frml, X, k, ieval)
+
+## Optimize
+result <- optim(h, obj_kernel, lower = 2, upper = 8, frml = frml, data = X[itrain, ], ieval = ieval, k = k)
+result
+
+## Calculate forecasts
+Pw_hat <- obj_kernel(h=result$par, frml, X, k, return_yhat = TRUE)
+X$residuals_kn <- X$Pw - Pw_hat
+
+## Compare
+tmp <- X[itest, ]
+plot(tmp$Pw, type = "l")
+lines(tmp$Pw - tmp$residuals_bsrls, col = 2)
+lines(tmp$Pw - tmp$residuals_bslm, col = 3)
+lines(tmp$Pw - tmp$residuals_kn, col = 4)
+
+## Improvements?
+rmse_kn <- rmse(X$residuals_kn[itest])
+
+#model comparison
+Model_wind <- c("Base spline and lm","Kernel",
+                "Base spline and rls","lm")
+RMSE_wind <- c(rmse_bslm, rmse_kn, rmse_bsrls,  rmse_lm)
+                     
+data.frame(Model_wind, RMSE_wind)
+```
+  * Finally, with the kernel model, do we achieve improvements?
+  
+*The kernel model gives a very similar fit as the previous models but if we just consider the RMSE then the "Base spline with lm" is still the best option.*
+
+>So, this was a very "simplified" example, when forecasting "real" wind power of, say, a huge wind farm, then there are many things to take into account. First, surely a conditional dependence of wind direction is important, and further, a lot of information about the operational status is very important to take into account.
+
+\pagebreak
+
+# Q8 - Probabilistic forecasting
+
+Finally, an example of how a probabilistic forecasting model can be setup is presented. It is very simple: replace linear regression lm() with quantile regression rq(), and replace the RMSE score function with Continuous Ranked Probability Score (CRPS). 
+
+
+>Every possible future has an assigned probability when doing probabilistic forecast. These forescasts however at not equally accurate and there is a need for evaluating them. There are simple metrics that asses the accurary such as MAE (Mean Absolute Error) or MAPE (Mean Absolute Percentage Error) but this are not suitable for probabilistic forecasts.  
+The Continuous Ranked Probability Score (CRPS) generalizes the MAE to the case of probabilistic forecasts. It compares a full distribution with the observation, where both are represented as cumulative distribution functions (cdfs).  It is sensitive to the entire permissible range of the parameter of interest. It can be interpreted as an integral over all possible scores. For the case of a deterministic forecast, the CRPS is equal to the mean absolute error (MAE) and, therefore, has a clear interpretation (@gneiting2007strictly, @hersbach2000decomposition, @brown1974admissible).
+
+```{r q8_ini, echo=FALSE, warning=FALSE, results='hide'}
+## Init by deleting all variables and functions
+rm(list=ls())
+## Set the working directory
+setwd(".")
+
+## Source functions
+sapply(dir("functions",full.names=TRUE), source)
+
+## Load the data
+Data <- readRDS("data_soenderborg.RDS")
+```
+```{r q8_data, echo=FALSE, warning=FALSE, results='hide'}
+## Make a data.frame with synced observations and NWPs
+k <- 24
+X <- data.frame(t=Data$t, Ps=Data$G, G=lag_vector(Data$Gnwp[ ,pst("k",k)],k), tday=Data$tday)
+X[ X$tday <= 5 | 18 < X$tday, -1] <- NA
+
+## Divide the period into a training set and a test set
+## Just keep the indexes
+tstart <- "2011-03-01"
+tstart_train <- "2011-04-10"
+tend <- "2011-05-01"
+X <- X[per(tstart,X$t,tend), ]
+itrain <- which(per(tstart,X$t,tstart_train))
+itest <- which(per(tstart_train,X$t,tend))
+
+## Plot (see functions/plotmulti.R)
+plotmulti(X, c("Ps|G"))
+
+## See the scatter plot
+plot(X$G, X$Ps)
+```
+### Quantile Regression model
+
+```{r q8_quantile_reg, echo=FALSE, warning=FALSE, results='hide'}
+
+## Fit a quantile regression model
+tau <- seq(0.05, by=0.15)
+
+fit <- rq(Ps ~ G, 
+          tau = tau, 
+          data = X[itrain, ])
+
+summary(fit)
+
+## Predict the quantiles
+Xrq <- predict(fit, X)
+
+## Plot
+colnames(Xrq) <- pst("q",tau)
+i <- per("2011-04-11",X$t,"2011-04-14")
+tmp <- cbind(X[i, ],Xrq[i, ])
+
+plotprob(list(tmp), nm.out = "Ps")
+
+## CRPS score on test set, use the function from the verification package
+tmp <- na.omit(cbind(X$Ps[itest],Xrq[itest, ]))
+
+crps_qr <- crpsDecomposition(tmp[ ,1],  tmp[ ,-1])$CRPS
+```
+### Base spline model with Quantile Regression 
+
+```{r q8_quantile_spline, echo=FALSE, warning=FALSE, results='hide'}
+## Use a base spline model with rq
+
+## Use the time of day to calculate base splines and multiply with G
+##   in this way the function between Ps and G can change conditional on time of day
+## Fit a quantile regression model
+
+fit <- rq(Ps ~ bs(tday, df=5) * G, 
+          tau = tau, 
+          data = X[itrain, ])
+
+summary(fit)
+
+## Predict the quantiles
+Xrq <- predict(fit, X)
+
+## Plot
+colnames(Xrq) <- pst("q",tau)
+i <- per("2011-04-11",X$t,"2011-04-14")
+tmp <- cbind(X[i, ],Xrq[i, ])
+
+plotprob(list(tmp), nm.out = "Ps")
+
+## CRPS score on test set, use the function from the verification package
+tmp <- na.omit(cbind(X$Ps[itest], Xrq[itest, ]))
+
+crps_bsqr <- crpsDecomposition(tmp[ ,1],  tmp[ ,-1])$CRPS
+```
+  * Do we gain in predictive performace using the base spline model over the linear model?
+*Yes, looking at the graphs we can see that the test-values fall more into the quantiles of the base spline model compared to the linear model. Also the CRPS improves from `r round(crps_qr, 3)` in the linear model to `r round(crps_bsqr, 3)` using base splines.*
 
 \pagebreak
