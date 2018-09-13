@@ -38,11 +38,6 @@ data$timedate <- asP(data$timedate)
 data$t <- asHours(data$timedate-data$timedate[1])
 
 
-## ----Child2-bonus1,echo=FALSE--------------------------------------------
-data$timedate <- asP(data$timedate)
-## timedate is the time in POSIXct, make t in hours since begining
-data$t <- asHours(data$timedate-data$timedate[1])
-
 model1 <- ctsm()
 
 model1$addSystem(dT1a ~ ( 1/(C1a*R1m)*(T1m-T1a) + 1/(C1a*R1a)*(Ta-T1a) + 1/C1a*Ph1 + p1*A1w/C1a*Gv)*dt + exp(p1a)/C1a*dw1a)

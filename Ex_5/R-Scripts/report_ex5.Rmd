@@ -1,12 +1,16 @@
 ---
+header-includes: #allows you to add in your own Latex packages
+- \usepackage{float} #use the 'float' package
+- \floatplacement{figure}{H} #make every figure with caption = H
+- \usepackage{color} #change text color, doesnt work always
+
 title: \Large Excercise 5 - Model Predictive Control using a Grey Box Model
+subtitle: Temperature control of a building
 author: "Marco Hernandez Velasco"
 date: "August 2018"
 output: 
   pdf_document:
     citation_package: natbib
-header-includes:
-  - \usepackage{color}
 bibliography: [references.bib, packages.bib]
 ---
 ```{r setup_bibliography, include=FALSE}
@@ -24,7 +28,9 @@ knitr::write_bib(c(.packages(),  #make a bibliography for the packages
 #define other general chunk settings
 knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
                       fig.height = 4, #figures height for all chunks
-                      fig.align = "center") 
+                      fig.width = 5, #figures width for all chunks
+                      fig.align = "center", #figure position
+                      fig.pos = 'H') #tell Latex to hold figures in thier position instead of floating (you still need the 'float' package in the yaml preamble)
 ```
 @* `r #includes all references in file, even those not mentioned in the text `
 
@@ -45,8 +51,6 @@ source("../functions/prbs.R")
 ##Introduction  
 
 In this exercise we will illustrate the main concepts of **Model Predictive Control (MPC)** by using it to control the temperature of a building. As the name suggests MPC relies on models and predictions, and so before designing a controller one needs to model the system and acquire relevant forecasts. In this exercise we will focus on the control part, assuming that we have perfect forecasts and models.
-
-
 
 ```{r model, echo=FALSE, warning=FALSE, results='hide'}
 # Fit grey box model ------------------------------------------------------
@@ -114,9 +118,11 @@ D <- matrix(sapply(fit1$model$obs.eqs$dmat,
 
 # Question 1
 
-How would you change the model, if instead the building was heated by floor heating?
+Consider the model for a single room building developed during the previous exercises where $T_i$ and $T_m$ are the temperatures of the indoor air and floor respectively, while $T_a$ is the temperature of the air outside. $C_i$ and $C_m$ are heat capacities of the inside air and floor, and $R_m$ and $R_a$ are the thermal resistances between $air \leftrightarrow floor$ and $air \leftrightarrow outside$. $\Phi$ is the effect of a radiator. $G_v$ is global solar radiation with $A_w$ being the effective window area. $\eta$ describes the fraction of radiation going to the air and to the floor. $w_i$ and $w_m$ are both Wiener processes describing the stochasticity of the model. For this model it is assumed that the heating is through a radiator to the air of the building. 
 
-*The effect of the radiator $\phi$ has to be set to 0 for dTi equation and added to the dTm. In the code this is done by defining an alternative B mattrix ("altB") where the first element is 0 and the other is the coefficient.*
+  * How would you change the model, if instead the building was heated by floor heating?
+
+*The effect of the radiator $\phi$ has to be set to 0 for the dTi equation and added to the dTm. In the code this is done by defining an alternative B mattrix ("altB") where the first element corresponding to the first state (air temperature) is 0 and the other is the coefficient for the floor heating.*
 
 ```{r q1, echo=FALSE, warning=FALSE, results='hide'}
 # Change from air heating to floor heating
@@ -126,18 +132,26 @@ altB[2,2] <- 1/fit1$xm[5]
 ```
 
 # Question 2
-Assume that you were to control the temperature of the air in this building. Would you expect it to be equally difficult for floor heating and air heating?  
+
+Assume that you were to control the temperature of the air in this building. 
+
+  * Would you expect it to be equally difficult for floor heating and air heating?  
+  
 *No, there is a different in the thermal mass and the time constant of the floor is higher so it takes longer to reach the desired temperature.*
 
-If not, which one would be the most difficult and why?
+  * If not, which one would be the most difficult and why?
+  
 *It is more difficult to control floor heating, specially if you are want sudden/fast changes. The floor heating will hold the temperature longer due to the thermal mass.*
 
 # Question 3
-Have a look at the values of A and B, and see they fit with your intuition.  
+
+  * Have a look at the values of A and B in the script and see they fit with your intuition.  
+
+*Depending on the type of heating (air or floor), the parameters in the second column of* **_B_** *and* **_altB_** *change to 0 in either of the states (the one that is not being used), making this way possible the control with the selected type of heating.*
 
 ```{r q3_AB, echo = TRUE, warning = FALSE}
 
-# Parameters of continous time model --------------------------------------
+# Parameters of continous time model
 A   # System dynamics, parameters of the states
 B    # Air heating, parameters of the inputs
 altB # floor heating
@@ -166,29 +180,36 @@ Dd
 ```
 
 # Question 4
-In this question we will formulate the equations of the MPC problem. The whole point of the control is to keep the temperature within comfort boundaries, so let us start with this. Assume that we do not care about the exact temperature of the building, as long as it is between 23C and 25C.  
-Now look at the data concerning the heating of the building *(data$Ph1)*. What is the maximum amount and minimum amount of heating? 
+In this question we will formulate the equations of the MPC problem. The whole point of the control is to keep the temperature within comfort boundaries, so let us start with this. Assume that we do not care about the exact temperature of the building, as long as it is between $23^{\circ}C$ and $25^{\circ}C$.  
+Now look at the data concerning the heating of the building *(data$Ph1)*. 
 
-```{r q4, echo=FALSE, warning=FALSE, results='hide'}
+  * What is the minimum amount and maximum amount of heating? 
 
+```{r q4, echo = FALSE, warning = FALSE}
 # Heating data 
 min(data$Ph1)
 max(data$Ph1)
-
 ```
-Finish the MPC formulation and explain it in words:  
 
-*The limits for the set temperature are between $23C < CXt < 25C$, the limits for the input heating are between $0kW < CXt < 1.5kW$.*  
+  * Finish the MPC formulation and explain it in words:  
+
+*The limits for the set temperature are between $23^{\circ}C < CX_{t+1} < 25^{\circ}C$, the limits for the input heating are, as shown above,  between $0kW < U_t < 1.5kW$.*
+
 *In this model we are assuming that the heater can be turned instantly on/off but in reality you would normally add a cost to switching it in order to do the optimization.*
 
 # Question 5
 
-Run the section *Perform Control* of the R-script, which simulates the controlled temperature using the same outside temperature and solar radiation as the data used for fitting the grey box model. The heating is optimized by solving the problem formulated in the previous question, with comfort boundaries and constraints on the heating equipment specified initially. By default the noise of the model is turned off, so the controller is able to perfectly align the air temperature with the lower
-comfort comfort boundary for maximum efficiency. 
+Run the section *Perform Control* of the R-script, which simulates the controlled temperature using the same outside temperature and solar radiation as the data used for fitting the grey box model. The heating is optimized by solving the problem formulated in the previous question, with comfort boundaries and constraints on the heating equipment specified initially. By default the noise of the model is turned off, so the controller is able to perfectly align the air temperature with the lower comfort comfort boundary for maximum efficiency. 
 
-The control horizon is specified by N and is equal to 30 by default, meaning that the controller looks 30 time steps (300 min or 5 hours) ahead in time. What happens as you vary N?
+The control horizon is specified by N and is equal to 30 by default, meaning that the controller looks 30 time steps (of 10 minutes) ahead in time (so 300 min or 5 hours). 
 
-Change the variable Air to FALSE, to simulate the building with floor heating instead of air heating. How does this affect the control?
+  * What happens as you vary N?  
+*Answer*
+
+Change the variable Air to **FALSE**, to simulate the building with floor heating instead of air heating.
+
+  * How does this affect the control?  
+*Answer*
 
 ```{r q5, echo=FALSE, warning=FALSE, results='hide'}
 
@@ -251,4 +272,49 @@ lines(c(Ymin,Ymin) ~ c(0,Tmax),lty=2)
 legend(70,max(Ymax+0.6),c("Air Temperature","Thermal Mass Temperature",'Heating'),col=c('Black',alpha("blue",0.4),'red'),lty=1,bty='n')
 
 ```
+
+# Question 6
+
+In reality unpredicted disturbances occur, which can be included in the model by increasing Noise. 
+  
+  * What happens when for Noise equal to 0.5 or 1?  
+*Answer*
+
+  * What is the effect of the control horizon and heating medium (air or floor)?   
+*Answer*
+
+Since the noise is quite significant, especially for Noise equal to 1 you should try different combinations of the control parameters for a fixed seed, to see their effect, but also change the seed to see several realizations of the noise.
+
+# Question 7
+
+In practice it is not possible to guarantee that the temperature stays within comfort boundaries, which is evident from the simulation results. However, it seems like the controller is doing a particularly bad job in this case, with the temperature going below the comfort limits many times. 
+
+  * Why is this the case? How could we mend this issue?  
+*Answer*
+
+# Question 8
+
+Sometimes one experiences varying prices or penalties, so that the objective is not to minimize energy consumption, but cost. This can easily be implemented by E-MPC (Economic Model Predictive Control).  
+Mathematically the problem changes where lt is the penalty or price at time t. Change the price in the R-script from a constant one to a varying one. This could for example be a PRBS signal which is
+in the script as a comment. 
+
+  * How does the optimization change when the prices are varying?   
+*Answer*
+
+  * What is the effect of the control horizon on the ability to minimize varying costs?   
+*Answer*
+
+  * What about the other parameters?  
+*Answer*
+
+# Question 9
+
+In this example the process noise (et) was estimated as part of the grey box model, and thus this can be used to estimate the distribution of the air temperature given the current temperature and the control action. Since the noise intensity (S) is constant this formulation only depends on the difference between the expected temperature  and temperature limit (Tmin). This means that we only have to compute the expression once, and the actual control implementation remains linear.
+
+Change the variable Stochastic to TRUE and rerun the control simulation to see the effect. The variable ViolationFraction can be used to adjust how often we are willing to accept comfort violations. 
+
+  * Describe the difference compared to the previous case, where the stochasticity was not considered.  
+*Answer*
+
+
 \pagebreak

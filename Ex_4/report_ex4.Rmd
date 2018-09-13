@@ -4,8 +4,7 @@ header-includes: #allows you to add in your own Latex packages
 - \floatplacement{figure}{H} #make every figure with caption = H
 - \usepackage{color} #change text color, doesnt work always
 
-title: \Large Excercise 4 - Forecasting in energy systems
-subtitle: Models for the heat dynamics of a building
+title: \Large Excercise 4 - Estatistical models for forecasting in energy systems
 author: "Marco Hernandez Velasco"
 date: "August 2018"
 output: 
