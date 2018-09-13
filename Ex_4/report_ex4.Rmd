@@ -1,12 +1,16 @@
 ---
-title: \Large Excercise 4 - Forecasting
+header-includes: #allows you to add in your own Latex packages
+- \usepackage{float} #use the 'float' package
+- \floatplacement{figure}{H} #make every figure with caption = H
+- \usepackage{color} #change text color, doesnt work always
+
+title: \Large Excercise 4 - Forecasting in energy systems
+subtitle: Models for the heat dynamics of a building
 author: "Marco Hernandez Velasco"
 date: "August 2018"
 output: 
   pdf_document:
     citation_package: natbib
-header-includes:
-  - \usepackage{color}
 bibliography: [references.bib, packages.bib]
 ---
 ```{r setup_bibliography, include=FALSE}
@@ -40,12 +44,29 @@ rm(list=ls())
 setwd(".")
 
 ```
+In this exercise you will work with setting up models, which are useful for many applications of forecasting in energy systems. The models are setup in a two-stage approach, first transformations of the inputs are applied and then an estimation method is applied.
 
+The exercise deals with first load forecasting, then solar and wind forecasting. It starts by introducing a simple linear low-pass filter for input transformation (and base splines) and then this is used together with linear regression for load forecasting. Then the recursive least squares (RLS) estimation method is introduced, and
+applied for load forecasting. 
+
+For solar and wind forecasting both base spline and kernel methods are used.
+
+In the exercise numerical weather predictions (NWPs) are used as model input. The first step is to understand how they are set up. They are set up as matrices. It holds for each time t the latest available forecasts along the row for the variable where
+  * $t$ is the counter of time for equidistant time points. In this notation normalized, such that the sampling time is $t_1-t_0 = 1$ (the time stamps are then just kept in another vector)
+  
+  * $t_0$ is the first available time point
+  
+  * $n_k$ is the length of the forecasting horizon
+  
+  * The column names are indicated above the matrix, they are simply a k concatenated with the value of k.
+
+The time _t_ can then just be thought of as an index (in the R code we use just _i_ and the time stamps are kept in a vector).
+
+\pagebreak
 
 # Q1 - Data setup and linear regression
 
-In the exercise numerical weather predictions (NWPs) are used as model input. The
-first step is to understand how they are set up. They are set up as matrices.
+In the exercise numerical weather predictions (NWPs) are used as model input. The first step is to understand how they are set up: as matrices. The main point is, that in order to fit a model for the k’th horizon you will need to lag the forecast input.
 
 ```{r q1_ini, echo=FALSE, warning=FALSE, results='hide'}
 ## Source scripts in the functions folder
@@ -53,7 +74,7 @@ sapply(dir("functions",full.names=TRUE), source)
 ## Load the data
 Data <- readRDS("data_soenderborg.RDS")
 ```
-Try to learn how the data is setup, divide into a training and a test set, fit a linear regression model for k = 1 step ahead. 
+Now the point is, that if we want a forecast model for k steps ahead, then we can simply use lm() in R on this data. 
 
 ```{r data_setup, echo=FALSE, warning=FALSE, results='hide'}
 ## Learn how the data is setup
@@ -93,14 +114,14 @@ Data$Tanwp[100, ]
 plot(Data$t, Data$Ta, type = "l")
 lines(Data$t, Data$Tanwp$k1, col = 2)
 
-## Make a scatter plot
-#plot(Data$Ta, Data$Tanwp$k1) #not plotted in the report
+## Make a scatter plot --- not plotted in the report
+#plot(Data$Ta, Data$Tanwp$k1) 
 
-## Also of the k = 24 hour forecast
-#plot(Data$Ta, Data$Tanwp$k24) #not plotted in the report
+## Also of the k = 24 hour forecast --- not plotted in the report
+#plot(Data$Ta, Data$Tanwp$k24) 
 
 ## Wuups, we need to lag the NWPs to match in time
-## See how lag_vector() works
+## See how lag_vector() works, moves everything the number of spaces indicated
 x <- c(0,0,1,2,3,0,0)
 lag_vector(x, 1)
 lag_vector(x, 2)
@@ -109,18 +130,21 @@ lag_vector(x, 2)
 plot(Data$Ta, lag_vector(Data$Tanwp$k1, 1))
 plot(Data$Ta, lag_vector(Data$Tanwp$k24, 24))
 ```
-Does the forecast look reasonable? Which seems to be most accurate k = 1 or 24 steps ahead?  
+  * Does the forecast look reasonable? Which seems to be most accurate k = 1 or 24 steps ahead?  
 
-*yes, the weather forecast seems reasonable even with a k = 24, it doesn't change too much and fits relatively good a line, altough the best is with k=1*
+*Yes, the weather forecast seems reasonable even with a k = 24, it doesn't change too much and fits relatively good to a straight line, altough the best restult is reached in this case with k = 1*
 
-Try the laod forecast for a different house. Give an example and a summary of what you find.  
+\pagebreak
 
-*For House 4, with k = 1 steps ahead, the load forescast is not so good and there is still alot of variation not being considered. Nevertheless the model is able to account for 49% of the variance (R^2) and has a low RMSE compared to the other houses.*
-```{r q1_new_house, echo=FALSE, warning=FALSE, results='hide'}
+  * Try to learn how the data is setup, divide into a training and a test set, fit a linear regression model for $k = 1$ step ahead. Does the forecast look reasonable?  
+
+*For House 4, with k = 1 steps ahead, the load forescast is not so good and there is still alot of variation not being considered. All the coefficients are significant and the model is able to account for 49% of the variance ($R^2$) and has a low RMSE compared to the other houses.*
+
+```{r q1_h4_k1, echo=FALSE, warning=FALSE, results='hide'}
 ## Now lets make a model and calculate load forecasts
 
 ## Make a data.frame with synced observations and NWPs
-## Take Ph4, which is the load from House 5
+## Take Ph4, which is the load from House 4
 
 ## Make the k = 1 steps ahead "design matrix"
 X <- data.frame(t = Data$t, Ph = Data$Ph4, 
@@ -143,26 +167,73 @@ X$Ph_hat_lm <- predict(fit, X)
 
 ## Plot the test set
 plot(X$t[itest], X$Ph[itest], type = "l")
-lines(X$t[itest], X$Ph_hat_lm[itest], col = 2)
+lines(X$t[itest], X$Ph_hat_lm[itest], col = 2) #red line
 
 
 ## The score
 rmse1 <- rmse(X$Ph[itest] - X$Ph_hat_lm[itest])
 rmse1
 ```
+
+\pagebreak
+
+  * Try to calculate a forecast for House 5 with k = 36 steps ahead.Give an example and a summary of what you find.
+  
+*For House 5, with k = 36 steps ahead, the load forescast is not so good and there is still alot of variation not being considered. The coefficient for the solar radiation (G) is not significant in the linear model of house 5 (perhaps there are no windows in this house?). However the model is able to account for 65.7% of the variance ($R^2$) and has a higher RMSE compared to house 4 with  k=1.*
+
+```{r q1_h5_k36, echo=FALSE, warning=FALSE, results='hide'}
+## Make a data.frame with synced observations and NWPs
+## Take Ph4, which is the load from House 5
+
+## Make the k = 36 steps ahead "design matrix"
+X <- data.frame(t = Data$t, Ph = Data$Ph5, 
+                Ta = lag_vector(Data$Tanwp$k36,36),  #change this part for the k-steps
+                G = lag_vector(Data$Gnwp$k36,36)) #change this part for the k-steps
+
+## Make a training set, first 3 month, and a test set
+## Just keep the indexes
+itrain <- which(per("2010-09-01",X$t,"2010-12-01"))
+itest <- which(per("2010-12-01",X$t,"2011-01-01"))
+
+## Fit a linear model on the training set
+fit <- lm(Ph ~ Ta + G, X[itrain, ])
+
+## Are the coefficients significant?
+summary(fit)
+
+## Predict 
+X$Ph_hat_lm <- predict(fit, X)
+
+## Plot the test set
+plot(X$t[itest], X$Ph[itest], type = "l")
+lines(X$t[itest], X$Ph_hat_lm[itest], col = 2) #red line
+
+
+## The score
+rmse1 <- rmse(X$Ph[itest] - X$Ph_hat_lm[itest])
+rmse1
+```
+
 \pagebreak
 
 # Q2 - Low-pass filter
 
+Now we do know that there are dynamics, such that the heating doesn’t change immediately when the ambient temperature change, that’s why we usually will use a time series model (discrete ARMAX or continuous GB), however here we introduce a slightly simplified way to do it.
+
 We know, that the response of a building can be modelled as an R-C network, which lead to a low-pass filtering effect. Hence, we can apply a low-pass filter to the input, and the use that in the linear regression.
 
-In order to take dynamics into account we can filter the inupts. One can say it is a transformations of the inputs (like with base splines).
+In order to take dynamics into account we can filter the inupts. One can say it is a transformation of the inputs (like with base splines).
 
-First in order to model a linear dynamical 1st order system (i.e. single RC) make a sequence like an on/off signal.
+First in order to model a linear dynamical 1st order system (i.e. single RC) make a sequence like an on/off signal. It is the simplest first order low-pass filter with stationary gain of one:  
+
+\begin{center}
+$H(B) = \frac {1 - a_1}{1 - a_1B} $
+\end{center}
+
 
 ```{r q2_lowpass_filter, echo=FALSE, warning=FALSE, results='hide'}
 
-
+## First in order to model a linear dynamical 1st order system (i.e. single RC)
 ## Apply a low-pass filter
 x <- rep(c(rep(0,100),rep(1,100)), 4)
 plot(x, type="l")
@@ -180,13 +251,13 @@ for (i in 2:length(x)) {
 lines(y, col = 2)
 ```
 
-What happens with the relation between the input and the low-pass filtered signal e.g. what is the relation between the time constant and a1?  
+  * What happens with the relation between the input and the low-pass filtered signal e.g. what is the relation between the time constant and a1?  
 
-*The low-pass filter smoothness the signal and makes the sudden on/off changes slower. When a1 takes a value of 1 then the filtered signal is always 0. When a1 = 1, then the filtered signal follows the input exactly. The time constant is how long it takes to reach the 96% of the input signal.*
+*The low-pass filter smoothness the signal and makes the sudden on/off changes slower. When a1 takes a value of 1 then the filtered signal is always 0. When $a_1 = 1$, then the filtered signal follows the input exactly. The time constant is how long it takes to reach the 96% of the input signal.*
 
-What about the stationary gain? (i.e. the limit y approaches)  
+  * What about the stationary gain? (i.e. the limit y approaches)  
 
-*Depending on the value of a1, the filtered signal doesn't reach 0 after the cycle and there is a gain which reaches a limit. *
+*Depending on the value of a1, the filtered signal doesn't reach 0 after the cycle and there is a gain which reaches a limit.*
 \pagebreak
 
 # Q3 - Load forecast
@@ -664,10 +735,12 @@ X$Ph_hat_rls <- fit$y - fit$residuals
 plot(X$t[itest], X$Ph[itest], type = "l")
 lines(X$t[itest], X$Ph_hat_rls[itest], col = 2)
 ```
-* Are the forecasts good the first week?  
+  * Are the forecasts good the first week?  
+
 *By removing the first period (burn-in period) and optimizing the parameters the forecast became better.*
 
-* What about the coefficients, did they change?
+  * What about the coefficients, did they change?  
+
 *The coefficients are now more stable now and the range in which they vary is much smaller*
 
 ```{r q5_forecast2, echo=FALSE, warning=FALSE, results='hide'}
