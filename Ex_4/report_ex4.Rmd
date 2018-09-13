@@ -289,9 +289,9 @@ X$Ta_lp <- lp_vector(X$Ta, a1 = 0.99)
 plot(X$t[itest], X$Ta[itest], type = "l")
 lines(X$t[itest], X$Ta_lp[itest], col = 2)
 ```
-Is the model tuned for the particular building heat dynamics?  
+Is the linear model tuned for the particular building heat dynamics?  
 
-*It is tuned for the thermal mass of the buidling compared to the outdoor temperature but doesn't follow properly the fluctuations.*
+*It is tuned for the thermal mass of the buidling following the trend of the outdoor temperature but doesn't follow properly the fluctuations.*
 
 ```{r q3_lowpass_fit, echo=FALSE, warning=FALSE, results='hide'}
 ## Use it to make a model
@@ -311,12 +311,16 @@ lines(X$t[itest], X$Ph_hat_lp1[itest], col = 2)
 rmse2 <- rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
 
 ```
-Are the forecasts improved in terms of RMSE?  
-
+  * Are the coefficients significant?
+  
+*The coefficient for the ambient temperature (Ta) is significant but not the one for the solar radiation (G).*
+  
+  * Are the forecasts improved in terms of RMSE?
+  
 *Yes, the RMSE improved from `r rmse1` without low-pass filter to `r rmse2`.*  
 
 
-**Tunning the low-pass coefficient:**
+## Tunning the low-pass coefficient:
 ```{r q3_lowpass_tune, echo=FALSE, warning=FALSE, results='hide'}
 ## We have to tune the low-pass coefficient, do it 
 obj <- function(prm, frml, data) {
@@ -363,6 +367,10 @@ obj <- function(prm, frml, data, itrain, return_fit = FALSE) {
         return(val)
     }
 }
+```
+In order to tune the low-pass filter coefficients (one for the ambient temperature and one for the solar radiation) apply an optimizer to minimize the RMSE with leaveone-out cross-validation on the test set.
+
+```{r q3_lowpass_tune, echo=FALSE, warning=FALSE, results='hide'}
 
 ## It can be used in optim
 result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml = frml, data = X[itrain, ], method = "L-BFGS-B", itrain = itrain)
@@ -381,14 +389,14 @@ lines(X$t[itest], X$Ph_hat_lpopt[itest], col = 2)
 ## The score
 rmse3 <- rmse(X$Ph[itest] - X$Ph_hat_lpopt[itest])
 ```
-Did we improve?
+  * Did the model improve?
+  
 *There is a minor improve in the RMSE from `r round(rmse2, 3)` to `r round(rmse3, 3)` with the tuned low-pass filter.*
 
-Finally, include a diurnal curve using base splines. Make the base splines using bs(). Do we get better forecasts?
+Finally, include a diurnal curve using base splines. Make the base splines using bs(). 
 
 ```{r q3_splines, echo=FALSE, warning=FALSE, results='hide'}
 ## We miss something: a diurnal curve
-
 ## We have the hour of the day
 X$tday
 
@@ -396,7 +404,13 @@ X$tday
 frml <- as.formula(Ph ~ bs(tday,df=4) + Ta + G)
 
 ## Tune the low-pass coefficients
-result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml=frml, data=X[itrain, ], method="L-BFGS-B")
+result <- optim(c(Ta=0.98,G=0.98), 
+                obj, 
+                lower = c(0.3,0.1), 
+                upper = c(0.999,0.999), 
+                frml=frml, 
+                data=X[itrain, ], 
+                method="L-BFGS-B")
 
 result
 
@@ -412,17 +426,19 @@ plot(X$t[itest], X$Ph[itest], type = "l")
 lines(X$t[itest], X$Ph_hat_diur[itest], col = 2)
 
 ## The score, compare it to the "simpler" models
-rmse4 <- rmse(X$Ph[itest] - X$Ph_hat_diur[itest])
+rmse4 <- 
+rmse(X$Ph[itest] - X$Ph_hat_diur[itest])
 rmse(X$Ph[itest] - X$Ph_hat_lpopt[itest])
 rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
 ```
-Do we get better forecasts?  
+Do we get better forecasts? 
 
 *Yes, including the splines for the diurnal curve improved the RMSE to `r round(rmse4, 3)`.*
 
 \pagebreak
 
-**(Optional)** How to choose the degrees of freedom df? maybe use AIC or BIC?
+  * How to choose the degrees of freedom df? maybe use AIC or BIC?
+  
 (Out of currect scope) Use Fourier series instead as basis functions for the diurnal curve.
 ```{r q3_fourier1, echo=FALSE, warning=FALSE, results='hide'}
 ## We could use Fourier series as base functions
@@ -446,8 +462,8 @@ for(i in 2:ncol(Xtmp)) {
 ## A linear combination can form any harmonic function
 plot(apply(runif(n_harmonics * 2) * t(Xtmp), 2, sum), type = "b")
 ```
-How many harmonics make sense to maximum include when the period is in 24 steps?
-3
+  * How many harmonics make sense to maximum include when the period is in 24 steps?
+*3*
 
 ```{r q3_fourier2, echo=FALSE, warning=FALSE, results='hide'}
 
