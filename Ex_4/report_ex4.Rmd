@@ -175,8 +175,6 @@ rmse1 <- rmse(X$Ph[itest] - X$Ph_hat_lm[itest])
 rmse1
 ```
 
-\pagebreak
-
   * Try to calculate a forecast for House 5 with k = 36 steps ahead.Give an example and a summary of what you find.
   
 *For House 5, with k = 36 steps ahead, the load forescast is not so good and there is still alot of variation not being considered. The coefficient for the solar radiation (G) is not significant in the linear model of house 5 (perhaps there are no windows in this house?). However the model is able to account for 65.7% of the variance ($R^2$) and has a higher RMSE compared to house 4 with  k=1.*
@@ -289,7 +287,7 @@ X$Ta_lp <- lp_vector(X$Ta, a1 = 0.99)
 plot(X$t[itest], X$Ta[itest], type = "l")
 lines(X$t[itest], X$Ta_lp[itest], col = 2)
 ```
-Is the linear model tuned for the particular building heat dynamics?  
+  * Is the linear model tuned for the particular building heat dynamics?  
 
 *It is tuned for the thermal mass of the buidling following the trend of the outdoor temperature but doesn't follow properly the fluctuations.*
 
@@ -370,7 +368,7 @@ obj <- function(prm, frml, data, itrain, return_fit = FALSE) {
 ```
 In order to tune the low-pass filter coefficients (one for the ambient temperature and one for the solar radiation) apply an optimizer to minimize the RMSE with leaveone-out cross-validation on the test set.
 
-```{r q3_lowpass_tune, echo=FALSE, warning=FALSE, results='hide'}
+```{r q3_lowpass_tune2, echo=FALSE, warning=FALSE, results='hide'}
 
 ## It can be used in optim
 result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml = frml, data = X[itrain, ], method = "L-BFGS-B", itrain = itrain)
@@ -433,13 +431,13 @@ rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
 ```
   * Do we get better forecasts? 
 
-*Yes, including the splines for the diurnal curve improved the RMSE to `r round(rmse4, 3)`.*
-
-\pagebreak
+*Yes, including the splines for the diurnal curve improved the RMSE reducing it to `r round(rmse4, 3)`.*
 
   * How to choose the degrees of freedom df? maybe use AIC or BIC?
   
-(Out of currect scope) Use Fourier series instead as basis functions for the diurnal curve.
+*An optimization option can be made minimizing the AIC, which already give penalty to the number of parameters (see Peder's presentation for forecast optimization and @bacher2011identifying.)* 
+  
+Use Fourier series instead as basis functions for the diurnal curve *(Optional)*.
 ```{r q3_fourier1, echo=FALSE, warning=FALSE, results='hide'}
 ## We could use Fourier series as base functions
 ## Fourier series for one day of hourly values
@@ -458,17 +456,20 @@ for(i in 2:ncol(Xtmp)) {
     lines(Xtmp[ ,i], col = i, type = "b")
 }
 ##
-#plot(Xtmp[ ,ncol(Xtmp)], type = "b")
+plot(Xtmp[ ,ncol(Xtmp)], type = "b")
 ## A linear combination can form any harmonic function
 plot(apply(runif(n_harmonics * 2) * t(Xtmp), 2, sum), type = "b")
+
 ```
-  * How many harmonics make sense to maximum include when the period is in 24 steps?
+  * How many harmonics make sense to include (maximum) when the period is in 24 steps?
+  
 *3*
 
 ```{r q3_fourier2, echo=FALSE, warning=FALSE, results='hide'}
 
 ## Fit a diurnal curve with Fourier series as base functions
-tmp <- fs(X$tday/24, n_harmonics=3)
+tmp <- fs(X$tday/24, 
+          n_harmonics=3)
 tmp <- do.call("cbind", tmp)
 
 Xfit <- cbind(X,tmp)
@@ -476,7 +477,13 @@ Xfit <- cbind(X,tmp)
 frml <- as.formula(Ph ~ sin_1 + cos_1 + sin_2 + cos_2 + sin_3 + cos_3 + Ta + G)
 
 ## Tune the low-pass coefficients
-result <- optim(c(Ta=0.98,G=0.98), obj, lower = c(0.3,0.1), upper = c(0.999,0.999), frml=frml, data=Xfit[itrain, ], method="L-BFGS-B")
+result <- optim(c(Ta=0.98,G=0.98), 
+                obj, 
+                lower = c(0.3,0.1), 
+                upper = c(0.999,0.999), 
+                frml=frml, 
+                data=Xfit[itrain, ], 
+                method="L-BFGS-B")
 
 result
 
