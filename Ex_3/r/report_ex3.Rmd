@@ -2,7 +2,7 @@
 header-includes: #allows you to add in your own Latex packages
 - \usepackage{float} #use the 'float' package
 - \floatplacement{figure}{H} #make every figure with caption = H
-- \usepackage{color} #change text color
+- \usepackage{color} #change text color, doesnt work always
 
 title: \Large Excercise 3 - Grey-box models (continued)
 subtitle: Models for the heat dynamics of a building
@@ -91,9 +91,9 @@ X <- prepare_data(readSeries("X5", Ts=10, nlags=NA), samples_after_Qi_step = 5)
 plotmulti(X, c("yTi","Te","Qi","G","stepQi"), xnm="timedate", ylab=c("Ti (c)","Te (C)","Qi (W)","Gv (W/m2)","stepQi"))
 
 ```
-The lower time series plot is of stepQi, which goes from 0 to 1. Try to change the argument samples_after_Qi_step in the function preparing the data. How does it change stepQi?
+  * The lower time series plot is of stepQi, which goes from 0 to 1. Try to change the argument samples_after_Qi_step in the function preparing the data. How does it change stepQi?
 
-\textcolor{blue}{Changing the stepQi makes the ON or OFF intervals longer or shorter and makes it able to correspond better to the actual heater's behavior. Like below with a step = 0.5}
+*Changing the stepQi makes the ON or OFF intervals longer or shorter and makes it able to correspond better to the actual heater's behavior. Like below with a step = 0.5*
 
 ```{r q1_step_qi_plot, echo=FALSE, warning=FALSE, results='hide'}
 ## changing samples_after_Qi_step
@@ -107,14 +107,9 @@ plotmulti(X2, c("yTi","Te","Qi","G","stepQi"), xnm="timedate", ylab=c("Ti (c)","
 ```
 ## Comparing the two models
 
-Now compare the two models implemented in **functions/sdeTiTw.R** and
-**functions/sdeTiTw_sigmalevels.R**. What is the difference?
+  * Now compare the two models implemented in **functions/sdeTiTw.R** and **functions/sdeTiTw_sigmalevels.R**. What is the difference?
 
-\textcolor{blue}{The second model includes with sigma levels include:}  
-
-$(1+(stepQi*sigmalevel))$  
-
-\textcolor{blue}{in the error term allowing to account for the noise of turning ON and OFF the heater.}
+*The second model includes with sigma levels include:* $(1+(stepQi*sigmalevel))$ *in the error term allowing to account for the noise of turning ON and OFF the heater.*
 
 Now go to the script and fit the two models. Compare the results:
 ```{r q1_compare, echo=FALSE, warning=FALSE, results='hide'}
@@ -131,17 +126,18 @@ Fits[["TiTw_sigmalevels"]] <- sdeTiTw_sigmalevels(X)
 analyzeFit(Fits[["TiTw_sigmalevels"]], type="s")
 ```
 
-What is plotted in the upper two plots? (You maybe have to look into the
+  * What is plotted in the upper two plots? (You maybe have to look into the
 analyzeFit() function).
 
-\textcolor{blue}{The upper plot is the residuals of the predicted variable \textbf{yTi}.} \textcolor{blue}{The lower plot is the standarized residuals (residuals / sd(yTi)), the y-axis changes as the errors are now divided by the standard deviation (sigma)}
+*The upper plot is the residuals of the predicted variable* **yTi**. *The lower plot is the standarized residuals (residuals / sd(yTi)), the y-axis changes as the errors are now divided by the standard deviation ($\sigma$)*
 
-What is indicated by the blue lines in the upper plot? Step back in the plots and compare the results, and look at the summary output.
+  * What is indicated by the blue lines in the upper plot? Step back in the plots and compare the results, and look at the summary output.
 
-\textcolor{blue}{The blue lines in the upper plot are the standard deviation of the predicted variable (\textbf{yTi}) by which the residuals are divided to be standarized in the second graph below.}
+*The blue lines in the upper plot are the standard deviation of the predicted variable* **yTi** *by which the residuals are divided to be standarized in the second graph below.*
 
-Step back in the plots and compare the results, and look at the summary output. Which of the two models will you prefer and why?
-\textcolor{blue}{The one with sigma level because it allows the variance to change with time and captures better the variability of the process and that is shown in its residuals.When comparing their Log-Likelihood, also the model with sigma-levels has a larger likelihood.}  
+  * Step back in the plots and compare the results, and look at the summary output. Which of the two models will you prefer and why?  
+
+*The one with sigma level because it allows the variance to change with time and captures better the variability of the process and that is shown in its residuals.When comparing their Log-Likelihood, also the model with sigma-levels has a larger likelihood.*   
 
 So it becomes clear that we have some (possible non-linear) dynamics when the heating turns on and off, which our models doesn’t predict so well. But **instead of adding a more detailed description to the deterministic part of the model, we simply vary the system noise, or in other words, change the uncertainty level of our states under under different conditions**. This is a very useful thing, since there will be many phenomena in buildings, especially occupied buildings, which will lead different to levels of noise, e.g., solar radiation and occupants doing funny things.
 
@@ -291,15 +287,14 @@ First, plot the sun elevation as a function of the sun azimuth, as well as a hor
 plot(X$sunAzimuth, X$sunElevation)
 abline(h = 0)
 ```
-Find the azimuth angles (in radians) that corresponds to the sunrise and sunset, and assign them to azumith_bound <- c(... , ...) below. These two angles will in a moment be our boundary azimuth angles. Outside the boundaries the gA value is 0, as the sun is below the horizon and the radiation is zero. Thus, we are only interested in the gA values from sunrise to sunset.
+  * Find the azimuth angles (in radians) that corresponds to the sunrise and sunset, and assign them to azumith_bound <- c(... , ...) below. These two angles will in a moment be our boundary azimuth angles. Outside the boundaries the gA value is 0, as the sun is below the horizon and the radiation is zero. Thus, we are only interested in the gA values from sunrise to sunset.
 
 ```{r q2_angles, echo=TRUE, warning=FALSE}
 ## Inset the boundary angles (in radians) below.
-a <- X %>% select(sunAzimuth, sunElevation) %>%  #select relevant colums
-      mutate(sunAz = round(sunAzimuth,2), #round the azimuth
-              #give the sign of the elevation
-              #compare to previous/lagged sign, get absolute value
-              #when there is a change it will be = 0
+a <- X %>% select(sunAzimuth, sunElevation) %>%  #select relevant columns
+      mutate(sunAz = round(sunAzimuth, 2), #round the azimuth to 2 decimals
+            #obtain the sign of the elevation and add to previous/lagged sign
+            #when there is a change it will be = 0
              sign_change = sign(sunElevation) + lag(sign(sunElevation))) %>%
       filter(sign_change == 0) %>%  #find the rows where it changes
       summarise(min_bound = min(sunAz), max_bound = max(sunAz)) #summarise to the min, max
@@ -311,10 +306,7 @@ azumith.bound<- as.vector(t(a)) #t() transposes the matrix to do it by columns
 
 ```
 Define the base splines in the following lines of the script and stop after you have assigned the base splines to the data frame with the command X <- cbind(X,Xbs). Now play around with the four parameters in in the vector Aw, and plot the resulting spline function to get an understanding of how the base splines and the resulting spline function work.  
-
-
-*(Pro tip: the package lubridate is very useful when working with dates and
-time. Which often is the case for when dealing with time series!)*
+*(Pro tip: the package lubridate is very useful when working with dates and time. Which often is the case for when dealing with time series!)*
 ```{r q2_gA_splines, echo=FALSE, warning=FALSE, results='hide'}
 ## Create base splines
 Xbs <- as.data.frame(bs(X$sunAzimuth,
@@ -338,8 +330,9 @@ with(subset(X, day(X$timedate) == 29),{
 })
 
 ```
-What happens if Aw only consists of 1’s?  
-*The result is just a straight line. These parameters determine how the spline function will look like. By multiplying the base splines to a solar radiation series and using this as input to an ARX model, the soalr absorption coefficient (gA-value) can vary as a smooth funiton of the sun azimuth angle.*
+  * What happens if Aw only consists of 1’s?  
+
+*The result is just a straight line. These parameters determine how the spline function will look like. By multiplying the base splines to a solar radiation series and using this as input to an ARX model, the solar absorption coefficient (* **gA-value** *) can vary as a smooth funiton of the sun azimuth angle.*
 ```{r q2_gA_splines2, echo=FALSE, warning=FALSE, results='hide'}
 
 ## Play around with these parameters
@@ -354,7 +347,8 @@ with(subset(X, day(X$timedate) == 29),{
 })
 
 ```
-Fit the model and investigate the estimated parameters. Is the parameters Aw1, Aw2, Aw3 and Aw4 significant, and is the magnitude reasonable when the actual glazed area is 52 x 52 cm?  
+  * Fit the model and investigate the estimated parameters. Is the parameters Aw1, Aw2, Aw3 and Aw4 significant, and is the magnitude reasonable when the actual glazed area is 52 x 52 cm?  
+
 *The parameters Aw2 nad Aw4 are highly significant. Aw3 is significant but its value is very low and Aw1 is not significant. For the significant values of Aw2 and Aw4, the coefficient of 0.1 to 0.13 is close to the constant gA estimated previously and since this is the time where most solar radiation is entering the box through the window, the estiamted levels are found to be very reasonable.*
 
 ```{r q2_fit_model, echo=FALSE, warning=FALSE, results='hide'}
@@ -403,7 +397,7 @@ fit$Rnames <- c("Riw","Rwe")
 analyzeFit(fit)
 
 ```
-Plot the gA curve and the 95 % confidence interval. The window in the test box is facing south towards an open area, and should therefore be rather unobstructed. Why do the gA curve then have a shape which is asymmetrical
+  * Plot the gA curve and the 95 % confidence interval. The window in the test box is facing south towards an open area, and should therefore be rather unobstructed. Why do the gA curve then have a shape which is asymmetrical
 around the south (180 degrees)?  
 
 *This could be due to the position of the vertical irradiance sensor which is on the east side of the box. This means that it would recieve radiation in the morning but in the afternoon the box itself would block some of the diffuse light since the Sun is not going down exactly at the West.*
@@ -461,75 +455,137 @@ X <- prepare_data(readSeries("X5", Ts=10, nlags=NA))
 ## Plot it
 plotmulti(X, c("yTi","Te","Qi","Gv"), xnm="timedate", ylab=c("Ti (c)","Te (C)","Qi (W)", "Gv (W/m2)"))
 ```
+Estimate the parameters in the model **fitTiTw_X** and the following model, **fitTiTw_GinTw_X**.  
+Which of the models has the highest (log) likelihood?  
+
+*The model fitTiTw_X has a Loglikelihood of* **_765.59_** *while fitTiTw_GinTw_X has a higher a Loglikelihood of* **_778.83_**.
 
 ```{r q3_solar_gains, echo=FALSE, warning=FALSE, results='hide'}
 
 ## Balancing solar gain 
-
 ## Two-state model with solar gain assigned to Ti
 fitTiTw_X <- sdeTiTw(X)
 analyzeFit(fitTiTw_X)
+```
+\pagebreak
 
+```{r q3_TiTw_GinTw, echo=FALSE, warning=FALSE, results='hide'}
 ## Two-state model with solar gain balanced between Ti and Tw
 fitTiTw_GinTw_X <- sdeTiTw_GinTw(X)
 analyzeFit(fitTiTw_GinTw_X)
+```
+\pagebreak
 
+The second model has included a parameter, **p**, which is used to balance how much of the solar radiation that should be assigned to each of the two states, namely *Ti* and *Tw*.  
+Open the script for the function **sdeTiTw** and **sdeTiTw_GinTw** and compare them.
+
+  * How is the balancing actually done?  
+
+*The fitTiTw_GinTw_X model includes p in the first state:*
+$(Aw\cdot p/Ci \cdot Gv)$ *instead of* $(Aw/Ci\cdot Gv)$
+*and includes a new term in the second state with (1-p) for doing the balancing:* $(Aw\cdot(1-p)/Cw \cdot Gv)$   
+
+  * For which value of **p** does the model sdeTiTw_GinTw correspond to the first model sdeTiTw?
+  
+*When $p = 1$  both models are equal.*
+
+  * What is the estimate of the parameter, **p**, and is it significantly different from 0?  
+  
+*The estimate of the parameter is $p = 0.27$ and is significantly different from 0*
+
+  * Explain in words what the meaning of a small and a large value of p means. Based on the estimated parameter, **p**, is it reasonable to assume that the solar radiation entering the building solely should be assigned directly to the air temperature?  
+  
+*The value of* **_p_** *determines how much of the entering solar radiation is heating the air in the room and how much is heating the walls. It should two be balanced between both, air and walls, because it is not reasonable to assume that only the air is affected.*
+
+With the model **sdeTiTw_sigmalevels** as starting point, setup a model that includes two layers in the wall and a balancing parameter, p, to balance the solar radiation between Ti and Tw:
+
+```{r q3_new_model, echo=FALSE, warning=FALSE, results='hide'}
+
+# Create a better model 
+
+# Below is the model from the function sdeTiTw_sigmalevels. Use it as a starting
+# point, and include two layers in the wall and a balancing parameter, p, to
+# balance the solar radiation between Ti and Tw.
+
+#(this is basically the model sdeTiTw2)
+
+
+## Generate a new object of class ctsm
+    model <- ctsm$new()
+    ## Add system equations and thereby also states
+      #include p like in fitTiTw_GinTw_X
+    model$addSystem(dTi  ~ ( 1/(Ci*Riw)*(Tw1-Ti) + 1/Ci*Qi + Aw*p/Ci*Gv )*dt + exp(p11)*dw1)
+      
+      #two layers for the walls with (1-p) for balancing:
+    model$addSystem(dTw1 ~ ( 1/(Cw1*Riw)*(Ti-Tw1) + 1/(Cw1*Rww)*(Tw2-Tw1) + Aw*(1-p)/Cw1*Gv )*dt + exp(p22)*dw2) 
+    model$addSystem(dTw2 ~ ( 1/(Cw2*Rww)*(Tw1-Tw2) + 1/(Cw2*Rwe)*(Te-Tw2) )*dt + exp(p33)*dw3)
+    
+    ## Set the names of the inputs
+    model$addInput(Te,Gv,Qi) #remove stepQi
+
+    ## Set the observation equation: Ti is the state, yTi is the measured output
+    model$addObs(yTi ~ Ti)
+    ## Set the variance of the measurement error
+    model$setVariance(yTi ~ exp(e11))
+
+    ## Set the initial value (for the optimization) of the value of the state at the starting time point
+    model$setParameter(  Ti  = c(init=35  ,lb=10    ,ub=45) )
+    model$setParameter(  Tw1 = c(init=34  ,lb=10    ,ub=45) )
+    model$setParameter(  Tw2 = c(init=34  ,lb=10    ,ub=100) ) #need to add a new initial value for Tw2
+    ## Set the initial value of the parameters for the optimization
+    model$setParameter(  Ci = c(init=1E5 ,lb=1E4   ,ub=1E7) )
+    model$setParameter(  Cw1 = c(init=1E5 ,lb=1E4   ,ub=1E8) )
+    model$setParameter(  Cw2 = c(init=3E5 ,lb=1E4   ,ub=1E8) )
+    model$setParameter( Riw = c(init=0.1 ,lb=1E-5  ,ub=10) )
+    model$setParameter( Rww = c(init=0.1 ,lb=1E-5  ,ub=10) )
+    model$setParameter( Rwe = c(init=0.1 ,lb=1E-5  ,ub=10) )
+    model$setParameter(  Aw = c(init=0.2 ,lb=0.001 ,ub=10))
+    model$setParameter(  p  = c(init=0.5 ,lb=0.001 ,ub=1 )) #need a value for p
+    model$setParameter( p11 = c(init=1   ,lb=-50   ,ub=10) )
+    model$setParameter( p22 = c(init=1   ,lb=-50   ,ub=10) )
+    model$setParameter( p33 = c(init=1   ,lb=-50   ,ub=10) ) #need a value for p33 in Tw2
+    model$setParameter( e11 = c(init=-1  ,lb=-50   ,ub=10) )
+
+    ## Run the parameter optimization
+    fitTiTw2_X <- model$estimate(data = X, firstorder=pg$firstorder, threads = pg$threads)
+    fitTiTw2_X$data[[1]] <- X
+    fitTiTw2_X$Rnames <- c("Rwe","Riw","Rww")
+    analyzeFit(fitTiTw2_X)
 ```
 
-```{r q3_qi_states, echo=FALSE, warning=FALSE, results='hide'}
+As it is the case for the solar radiation, the heat input from the heating system can also be assigned to different thermal capacities. Until now, we have assigned it directly to the indoor air temperature, *Ti*. To which state the heat should be assigned depends on the reaction time of the heating system. E.g. an electrical heat blower has a much faster responds time than a built-in floor heating system, and should most likely not be assigned to a state with very slow heat dynamics.  
+
+  * Open the script of the function sdeTiTw2_QinTw and see how the model is made. Compared to the previous model, we have introduced an additional layer in the wall and assigned the heat input from the heating system to the inner wall. 
+  
+*Compared to the previous model sdeTiTw2, the sdeTiTw2_QinTw model removes* $1/Ci\cdot Qi$ *from the indoor temperature state and instead adds Qi in form of* $1/Cw1\cdot Qi$ *to the first wall state Tw1.*  
+
+```{r q3_TiTw2_QinTw, echo=FALSE, warning=FALSE, results='hide'}
 ## Assign Qi to different states 
 
 ## Have two states in the wall and heating goes to wall
 fitTiTw2_QinTw_X <- sdeTiTw2_QinTw(X)
 analyzeFit(fitTiTw2_QinTw_X)
+```
+  * Fit the model fitTiTw2_QinTw_X and assess—only from the loglikelihood—if it has improved compared to the previous model.  
+*There was an improvement in terms of the Loglikelihood from* **_787.37_** *to* **_1150.74_** *with two states in the wall and heating goes term in wall.*  
+  
+  * Eyeball the residual plots (ACF, cummulated periodogram, and the residuals as function of time). Why does it not seem reasonable to conclude that the model has improved?
 
+*Because there is still autocorrelation in the ACF graph, the frequency is not evenly distributed n the peridogram and the residuals are not White Noise, still change their varince corresponding to the times when the heating system is turned on.*
+
+
+```{r q3_Qi_TiThTw2, echo=FALSE, warning=FALSE, results='hide'}
 ## Have two states in the wall and a state for the heating
 fitTiThTw2_X <- sdeTiThTw2(X)
 analyzeFit(fitTiThTw2_X)
 
 ```
+  * What does it mean in physical terms when we include an additional state for the heating system, *Th*, as done in the model sdeTiThTw2?  
+  
+*For the indoor temperature stare, the sdeTiThTw2 model includes a term*  $(1/(Ci\cdot Rih)\cdot(Th-Ti))$ *compared to just* $(1/Ci \cdot Qi)$ *included in the sdeTiTw2 model. Then the state for the heating system* $( 1/(Ch \cdot Rih)\cdot(Ti-Th) + 1/Ch\cdot Qi )$ *contains the oposite term to balance it out. In physical terms this new state for the heating system accounts for the energy of the heating system that is going to the indoor temperature and tries to account for that fluctuations.*
 
-```{r q3_new_model, echo=FALSE, warning=FALSE, results='hide'}
+  * Look closely at the plots for the fit fitTiThTw2_X. What seems to drive the large fluctuations in the residuals, and what can the reason be?  
+  
+*The large fluctuations in the residuals seem to be driven by the ON and OFF fast cylcing of the heating system and that the system is not able to predict that fast enough.*
 
-# Create a better model 
-############
-# Below is the model from the function sdeTiTw_sigmalevels. Use it as a starting
-# point, and include two layers in the wall and a balancing parameter, p, to
-# balance the solar radiation between Ti and Tw.
-############
-
-## Generate a new object of class ctsm
-model <- ctsm$new()
-## Add system equations and thereby also states
-model$addSystem(dTi ~ ( 1/(Ci*Riw)*(Tw-Ti) + Aw/Ci*Gv + 1/Ci*Qi )*dt +
-                  (1+(stepQi*sigmalevel))*exp(p11)*dw1)
-model$addSystem(dTw ~ ( 1/(Cw*Riw)*(Ti-Tw) + 1/(Cw*Rwe)*(Te-Tw) )*dt +
-                  (1+(stepQi*sigmalevel))*exp(p22)*dw2)
-## Set the names of the inputs
-model$addInput(Te,Gv,Qi, stepQi)
-
-## Set the observation equation: Ti is the state, yTi is the measured output
-model$addObs(yTi ~ Ti)
-## Set the variance of the measurement error
-model$setVariance(yTi ~ exp(e11))
-
-## Set the initial value (for the optimization) of the value of the state at the starting time point
-model$setParameter(  Ti = c(init=35  ,lb=10    ,ub=45) )
-model$setParameter(  Tw = c(init=34  ,lb=10    ,ub=45) )
-## Set the initial value of the parameters for the optimization
-model$setParameter(  Ci = c(init=1E5 ,lb=1E4   ,ub=1E7) )
-model$setParameter(  Cw = c(init=5E5 ,lb=1E4   ,ub=1E8) )
-model$setParameter( Riw = c(init=0.1 ,lb=1E-5  ,ub=10) )
-model$setParameter( Rwe = c(init=0.1 ,lb=1E-5  ,ub=10) )
-model$setParameter(  Aw = c(init=0.2 ,lb=0.001 ,ub=3))
-model$setParameter( p11 = c(init=1   ,lb=-50   ,ub=10) )
-model$setParameter( p22 = c(init=1   ,lb=-50   ,ub=10) )
-model$setParameter( e11 = c(init=-1  ,lb=-50   ,ub=10) )
-model$setParameter( sigmalevel= c(init=1  ,lb=0    ,ub=100) )
-
-## Run the parameter optimization
-#fit <- model$estimate(data = X, firstorder=pg$firstorder, threads = pg$threads)
-
-#fit$data[[1]] <- X
-#fit$Rnames <- c("Rwe","Riw")
-```
+\pagebreak

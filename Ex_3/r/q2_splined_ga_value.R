@@ -101,7 +101,7 @@ plot(X$sunAzimuth, X$sunElevation)
 abline(h = 0)
 
 ## Inset the boundary angles (in radians) below.
-azumith.bound <- c(... , ...)
+azumith.bound <- c(1.05 , 5.22)
 
 ## Create base splines
 Xbs <- as.data.frame(bs(X$sunAzimuth,
