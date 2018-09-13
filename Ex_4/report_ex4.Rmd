@@ -426,12 +426,12 @@ plot(X$t[itest], X$Ph[itest], type = "l")
 lines(X$t[itest], X$Ph_hat_diur[itest], col = 2)
 
 ## The score, compare it to the "simpler" models
-rmse4 <- 
+rmse4 <- rmse(X$Ph[itest] - X$Ph_hat_diur[itest])
 rmse(X$Ph[itest] - X$Ph_hat_diur[itest])
 rmse(X$Ph[itest] - X$Ph_hat_lpopt[itest])
 rmse(X$Ph[itest] - X$Ph_hat_lp1[itest])
 ```
-Do we get better forecasts? 
+  * Do we get better forecasts? 
 
 *Yes, including the splines for the diurnal curve improved the RMSE to `r round(rmse4, 3)`.*
 
