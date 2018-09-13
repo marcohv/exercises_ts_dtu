@@ -22,7 +22,7 @@ knitr::write_bib(c(.packages(),  #make a bibliography for the packages
                 #basic packages used for Rmarkdown
                 'knitr', 'rmarkdown',  
                 #actual packages used  to solve
-                'tidyverse', 'ctsmr', 'splines'),   
+                'tidyverse', 'ctsmr', 'splines', 'parallel'),   
                 'packages.bib') #file num to which the references will be saved to
 
 #define other general chunk settings
@@ -35,8 +35,9 @@ knitr::opts_chunk$set(echo = TRUE, # show source code chunks in the output file
 ```{r initialize, message = FALSE, echo = FALSE}
 library(readxl) # to import Excel files
 library(tidyverse) # to use tidy data
-library(ctsmr)
-library(splines)
+library(ctsmr) #for doing ctsm analysis
+library(splines) #for base splines models
+library(parallel) #In order to use all cores on the cpu
 
 ## Init by deleting all variables and functions
 rm(list=ls())
@@ -366,7 +367,7 @@ obj <- function(prm, frml, data, itrain, return_fit = FALSE) {
     }
 }
 ```
-In order to tune the low-pass filter coefficients (one for the ambient temperature and one for the solar radiation) apply an optimizer to minimize the RMSE with leaveone-out cross-validation on the test set.
+In order to tune the low-pass filter coefficients (one for the ambient temperature and one for the solar radiation) apply an optimizer to minimize the RMSE with **_Leave-one-out cross-validation_** on the test set.
 
 ```{r q3_lowpass_tune2, echo=FALSE, warning=FALSE, results='hide'}
 
@@ -463,13 +464,14 @@ plot(apply(runif(n_harmonics * 2) * t(Xtmp), 2, sum), type = "b")
 ```
   * How many harmonics make sense to include (maximum) when the period is in 24 steps?
   
-*3*
+*At least 3 harmonics are required to run the optimization. Even when adding more the optimization come to 3 pairs of sin() & cos() functions.*
 
 ```{r q3_fourier2, echo=FALSE, warning=FALSE, results='hide'}
 
 ## Fit a diurnal curve with Fourier series as base functions
 tmp <- fs(X$tday/24, 
-          n_harmonics=3)
+          n_harmonics = 3)
+
 tmp <- do.call("cbind", tmp)
 
 Xfit <- cbind(X,tmp)
@@ -613,16 +615,20 @@ plot.ts(val$Theta)
 
 ```
 
-Does lm() estimate the parameters well on the combined data?  
+  * Does lm() estimate the parameters well on the combined data?  
 
-*No,* **lm()** *can estimate the coefficientes of the individual series but when they are combined it can not find the parameters since it is not anymore a line.*  
+*No,* **_lm()_** *can estimate the coefficientes of the individual series but when they are combined it can not find the parameters since it is not anymore a line and just finds a middle value.*  
 
-Does rls()?   
-*Yes, using* **rls()** *it is possible to estimate the parameters of the combined data.*
+  * Does rls()? 
+  
+*Yes, using* **_rls()_** *it is possible to estimate the parameters of the combined data.*
 
-Try to change the forgetting factor $\lambda$. What happens when it is set to 1 compared to the results obtained from lm()?  
+Try to change the forgetting factor $\lambda$.  
+  * What happens when it is set to 1 compared to the results obtained from lm()?  
 
-*The forgetting factor tells how much weight the model give to older data, $\lambda = 0$ means that the model "lives in the present" and ignores previous data; $\lambda = 1$ means that the model "remebers" everything. ASetting $\lambda = 1$ the last coefficients are very close to those obtained by lm().*
+*The forgetting factor tells how much weight the model give to older data, $\lambda = 0$ means that the model "lives in the present" and ignores previous data; $\lambda = 1$ means that the model "remembers" everything. When setting $\lambda = 1$ the last coefficients are very close to those obtained by the simple* **_lm()_**.
+
+
 ```{r q4_rls_lamda, echo=FALSE, warning=FALSE, results='hide'}
 ## change the forgetting factor lambda
 val <- rls(y ~ x, lambda = 1, data = X, k = 1)
@@ -636,8 +642,10 @@ val$Theta[c(199,399),]
 lm_q4 <- lm(y ~ x, X)
 lm_q4$coefficients
 ```
-Is there a trade-off between variance and bias (i.e. over- and under-fitting) related to $\lambda$?  
-*Yes, the forgetting coefficient has to be chosen properly otherwise the model will not be fitted properly.*
+  * Is there a trade-off between variance and bias (i.e. over- and under-fitting) related to $\lambda$?  
+*Yes, the forgetting coefficient has to be chosen in the right way otherwise the model will not be fitted properly.*  
+*If the forgetting coefficient is too small (model "lives in the present"), then there is a problem of over-fitting because it will try to adjust to every new comming value, having a big Variance.*  
+*On the other hand, a high forgetting coefficient will give under-fitting and the values will be biassed by very old observations.*
 
 \pagebreak
 
@@ -691,15 +699,16 @@ lines(X$t[i], X$yhat[i], type = "l", col = 2)
 plot.ts(fit$Theta[i, ])
 
 ```
-* How about the forecasts, do they look fine?  
-*No, the load forecast does not seem to follow properly the actual load from the test set.*  
+  * How about the forecasts, do they look fine?  
+*No, the load forecast (in red) does not seem to follow properly the actual load from the test set.*  
 
-* The tracked coefficients (the $\beta$s kept in $\theta$), do they change?  
+  * The tracked coefficients (the $\beta$s kept in $\theta$), do they change?  
 *The coefficients seem to be fluctuating too much.*  
 
-* What was $\lambda$ set to? it that optimal?
-**$\lambda$** *was set to 0.99 but it doesn't seem to be optimal*
+  * What was $\lambda$ set to? it that optimal?
+**_$\lambda$_** *was set to 0.99 but it doesn't seem to be optimal*
 
+Run the next part plotting the first month of the training set:
 ```{r q5_1st_period, echo=FALSE, warning=FALSE, results='hide'}
 ## Check the first period
 i <- per("2010-09-01",X$t,"2010-10-01")
@@ -710,14 +719,13 @@ lines(X$t[i], X$yhat[i], type = "l", col = 2)
 plot.ts(fit$Theta[i, ])
 
 ```
-* Are the forecasts good the first week?  
+  * Are the forecasts good the first week?  
 *No, the forecast follow somehow the trend of the load but not the peaks and there seems to be a lag between the observed values and the forecasted ones.*
 
-* What about the coefficients?  
+  * What about the coefficients?  
 *During the first period the coefficients vary a lot (see the y-axis of hte Theta-graph). This is because the model has not enough "history/memory" to properly predict.*
 
-Now, since the forecasts are poor until the coefficients are tracked, then make a "burn-in period", which simply means that a period in the beginning of the training set is left out in the score evaluation.  
-
+Now, since the forecasts are poor until the coefficients are tracked, then make a "burn-in period", which simply means that a period in the beginning of the training set is left out in the score evaluation.
 ```{r q5_optimise, echo=FALSE, warning=FALSE, results='hide'}
 ## Define an objective function for tuning the prm (i.e. lp coefficients and lambda)
 
@@ -757,6 +765,10 @@ X$Ph_hat_rls <- fit$y - fit$residuals
 ## Plot the test set
 plot(X$t[itest], X$Ph[itest], type = "l")
 lines(X$t[itest], X$Ph_hat_rls[itest], col = 2)
+
+
+## The tracked coefficients
+plot.ts(fit$Theta[itest, ])
 ```
   * Are the forecasts good the first week?  
 
@@ -782,6 +794,7 @@ lines(X$t[itest], fit$Theta[itest,3], col = 3)
 
   * Does the coefficients change over time?
 *Yes, the coefficients are now changing over time perhaps in a seasonal way.*
+
 
 # Q6 - Solar forecasting
 

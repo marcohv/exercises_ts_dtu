@@ -91,7 +91,7 @@ fit <- obj(result$par, frml, X, k = k, return_fit = TRUE)
 ## Predictions
 X$Ph_hat_rls <- fit$y - fit$residuals
 
-## Plot the test set
+## Plot the test set 
 plot(X$t[itest], X$Ph[itest], type = "l")
 lines(X$t[itest], X$Ph_hat_rls[itest], col = 2)
 
