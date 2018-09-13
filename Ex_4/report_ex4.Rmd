@@ -276,7 +276,7 @@ itest <- which(per("2010-12-01",X$t,"2011-01-01"))
 ```
 
 ```{r q3_lowpass, echo=FALSE, warning=FALSE, results='hide'}
-##----------------------------------------------------------------
+
 ## We know that there are dynamics from Ta to Ph
 
 ## The low-pass filter function is defined in "functions/lp_vector.R"
