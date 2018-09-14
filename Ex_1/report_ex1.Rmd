@@ -277,11 +277,7 @@ lines(xseq, predict(fit, newdata = data.frame(Te = xseq)))
 ```
 Try to change the degrees of freedom (df), what happens?
 
-<<<<<<< HEAD
 *When increasing the degrees of freedom the line fits better in the extreme temperatures. With a* **df=5** *there is a good fit in the extremes without overfitting.*
-=======
-*When increasing the degrees of freedom the line fits better in the extreme temperatures. With a* **df=5** *there is a good fit without overfitting.*
->>>>>>> 0063d922829550f9d1b71223e3e577f56fc6a4ec
 
 ```{r q3_df, results = 'hide', echo = FALSE}
 ## ----Degrees of freedom (df)
@@ -436,7 +432,7 @@ What should the bandwidth h be?
 *A bandwith between 6 and 7 seems to give a good fit. To find the best option a cross-validation has to be conducted to find the optimal.*
 \pagebreak
 
-# Q6 - Locally weighted model with a kernel function
+# Q6 - Tuning of the smoothing parameters
 
 Now we have a challenge of finding the optimal values for the smoothing parameters, either the bandwidth **h** in the kernel or the degrees of freedom for the base splines. If the model is over-fitted it varies too much (the function is too flexible and bends around too much), and on the other hand if it is under-fitted, then it is not “bending” and adapting enough to
 the observations.
