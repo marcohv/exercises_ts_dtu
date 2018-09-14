@@ -1244,6 +1244,7 @@ plotmulti(X, c("Ps|G"))
 ## See the scatter plot
 plot(X$G, X$Ps)
 ```
+
 ### Quantile Regression model
 
 ```{r q8_quantile_reg, echo=FALSE, warning=FALSE, results='hide'}
@@ -1265,13 +1266,16 @@ colnames(Xrq) <- pst("q",tau)
 i <- per("2011-04-11",X$t,"2011-04-14")
 tmp <- cbind(X[i, ],Xrq[i, ])
 
+
 plotprob(list(tmp), nm.out = "Ps")
+
 
 ## CRPS score on test set, use the function from the verification package
 tmp <- na.omit(cbind(X$Ps[itest],Xrq[itest, ]))
 
 crps_qr <- crpsDecomposition(tmp[ ,1],  tmp[ ,-1])$CRPS
 ```
+
 ### Base spline model with Quantile Regression 
 
 ```{r q8_quantile_spline, echo=FALSE, warning=FALSE, results='hide'}
@@ -1303,6 +1307,109 @@ tmp <- na.omit(cbind(X$Ps[itest], Xrq[itest, ]))
 crps_bsqr <- crpsDecomposition(tmp[ ,1],  tmp[ ,-1])$CRPS
 ```
   * Do we gain in predictive performace using the base spline model over the linear model?
+  
 *Yes, looking at the graphs we can see that the test-values fall more into the quantiles of the base spline model compared to the linear model. Also the CRPS improves from `r round(crps_qr, 3)` in the linear model to `r round(crps_bsqr, 3)` using base splines.*
+
+### Kernel model with Quantile Regression 
+
+>Finally, an optional task is left to make a locally fitted quantile regression model (hence using a kernel). If this is of your interest, you basically have to replace lm() with rq(), and rmse() with crpsDecomposition()$PRBS...and yes, the same approach can be applied for load, solar, temperature, etc. forecasts!
+
+```{r q8_quantile_kernel, echo=FALSE, warning=FALSE, results='hide'}
+
+## What about a kernel model?
+## Below wass pasted from "q6_solar_forecast.R":
+## It was "converted" from the least squares into a quantile regression
+## Needed to replace lm() with rq(), and rmse with crpsDecomposition()
+## and some other things on the way to make it work...
+
+## Wrap the leave-one-out in a function which returns the score
+obj <- function(h, frml, tau,  data, k = k, ieval = 1:nrow(data), n_min=10, return_yhat = FALSE){
+    ## Keep the output in yhat, only for ieval points
+    yhat <- sapply(ieval, function(i){
+        ## Check if there is enough points to fit
+        if((i-k) < n_min){ return(NA) }
+        if(is.na(data$tday[i])){ return(NA) }
+        ## Only use values available k steps behind (otherwise future values would be used)      
+        ipast <- 1:(i-k)
+        ## Only everything before the i'th observation will be included in the fit
+        fit <- rq(as.formula(frml), 
+                  tau = tau, 
+                  data = data[ipast, ], 
+                  weights = epanechnikov(data$tday[i], data$tday[ipast], h=h))
+        ## Now predict for the i point (for the k'th horizon)
+        predict(fit, newdata = data[i, ])
+    })
+    ##
+    if(return_yhat){
+        return(yhat)
+    }else{
+        ## Calculate the score value to use as basis for evaluate and optimize 
+            
+            #nm is used to select the column of the dataset that is
+              #the response variable "Y" in the regression formula Y ~ x
+        nm <- all.vars(as.formula(frml))[1] 
+        
+            #data[ieval, nm] subsets the data to the evaluation interval
+              # and selects only the column "nm" which is the response variable "Y"
+        
+            #yhat is a list of matrices that are binded by rows (rbind) 
+              #into a single matrix
+        
+            # we cbind the input data column with the forecasted data columns form yhat
+              #we omit the NA's
+        
+        tmp <- na.omit(cbind(data[ieval, 2], do.call(rbind, yhat)))
+        
+        val <- crpsDecomposition(tmp[ ,1],  tmp[ ,-1])$CRPS
+        
+        print(pst("h = ",h,", val = ",val))
+        ##
+        return(val)
+    }
+}
+
+#define the paramters for the new function
+frml <- "Ps ~ G"
+h <- 3
+tau <- seq(0.05,by=0.15)
+ieval <- itrain[-1:-(24*14)]
+
+#apply the function
+obj(h, frml, tau, X, k, ieval)
+
+#optimize the base of the kernel "h"
+result <- optimize(obj, lower = 0.9, upper = 4,  frml = frml, tau = tau, data = X[itrain, ], ieval = ieval, k = k)
+
+#obtain the optimized h 
+result$minimum
+
+#obtian the corresponding optimized CRPS
+crps_knqr <- result$objective
+
+
+#predict for X using the optimized kernel model with rq
+
+Ps_hat <- obj(h = result$minimum, #use the optimized h
+              frml, 
+              tau = tau,
+              X, k, return_yhat = TRUE)
+
+#the result is a list of matrices that need to binded by rows (rbind) into a single matrix
+Xrq <- do.call(rbind, Ps_hat ) 
+
+
+## Plot
+colnames(Xrq) <- pst("q",tau) #change the column names
+i <- per("2011-04-11",X$t,"2011-04-14") #choose the interval to plot
+
+tmp <- cbind(X[i, ], Xrq[i, ]) # put together the actual values and the predicted values in a matrix
+head(tmp)
+plotprob(list(tmp), nm.out = "Ps")
+
+```
+* Do we gain in predictive performace using the kernel model?
+  
+*Again, when looking at the graphs we can see that the test-values fall more into the higher quantiles of the kernel model compared to the linear model. Also the CRPS improves from `r round(crps_qr, 3)` in the linear and `r round(crps_bsqr, 3)` using base splines, to `r round(crps_knqr, 3)` with the kernel model.*
+
 
 \pagebreak

@@ -50,6 +50,22 @@ rmse(X$residuals_lm[itest])
 plotmulti(X[itest, ], c("Pw$|Pw_hat_lm"))
 ##----------------------------------------------------------------
 
+
+##----------------------------------------------------------------
+## Use a spline model to make it non-linear in the wind speed
+fit_bslm <- lm(Pw ~ bs(Ws, df=8), X[itrain, ])
+X$Pw_hat_bslm <- predict(fit_bslm, X)
+X$residuals_bslm <- X$Pw - X$Pw_hat_bslm
+
+## Improvements?
+rmse(X$residuals_bslm[itest])
+rmse(X$residuals_lm[itest])
+
+## See the forecasts
+plotmulti(X[itest, ], c("Pw$|Pw_hat"))
+##----------------------------------------------------------------
+
+
 ##----------------------------------------------------------------
 ## Use a spline model to make it non-linear in the wind speed
 fit_bslm <- lm(Pw ~ bs(Ws, df=8), X[itrain, ])
